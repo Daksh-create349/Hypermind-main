@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
@@ -490,12 +490,20 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                                                         })()}
                                                     </div>
                                                 ) : (
-                                                    <button
-                                                        onClick={() => handleSendMessage(`Teach me about ${msg.actionData.module} again, but simplify the core concepts.`, false)}
-                                                        className="px-6 py-3 rounded-xl bg-neutral-800 text-white font-medium hover:bg-neutral-700 transition-all w-full md:w-auto"
-                                                    >
-                                                        Review Module
-                                                    </button>
+                                                    <div className="flex gap-3 flex-wrap">
+                                                        <button
+                                                            onClick={() => handleSendMessage(`Teach me about ${msg.actionData.module} again, but simplify the core concepts.`, false)}
+                                                            className="px-6 py-3 rounded-xl bg-neutral-800 text-white font-medium hover:bg-neutral-700 transition-all w-full md:w-auto"
+                                                        >
+                                                            Review Module
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleSendMessage(`Generate a 5 question quiz for ${msg.actionData.module}.Return JSON: { "quiz": { "questions": [...] } } `, true, true)}
+                                                            className="px-6 py-3 rounded-xl bg-white text-black font-bold hover:bg-neutral-200 transition-all w-full md:w-auto flex items-center gap-2 justify-center"
+                                                        >
+                                                            <RotateCcw size={16} /> Retake Quiz
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
