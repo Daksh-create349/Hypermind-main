@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SplineSceneBasic } from './components/SplineSceneBasic';
 import { Onboarding } from './components/Onboarding';
-import { Sidebar } from './components/Sidebar';
+
 import { ChatInterface } from './components/ChatInterface';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
@@ -28,17 +28,7 @@ export default function App() {
         localStorage.setItem('hypermind_user', JSON.stringify(data));
     };
 
-    const handleReset = () => {
-        if (confirm("Are you sure you want to reset your progress? This cannot be undone.")) {
-            localStorage.removeItem('hypermind_user');
-            localStorage.removeItem('hypermind_chat_history'); // We will add this next
-            localStorage.removeItem('hypermind_progress'); // We will add this next
-            setUserData(null);
-            setIsOnboarded(false);
-            setHasStarted(false);
-            setShowLanding(true);
-        }
-    };
+
 
     return (
         <div className="h-screen w-full bg-black flex overflow-hidden relative selection:bg-white/30">
@@ -81,7 +71,7 @@ export default function App() {
                             ) : (
                                 // Main App (Sidebar + Chat)
                                 <div className="flex h-full w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
-                                    <Sidebar onReset={handleReset} mode={userData.mode || 'learn'} className="w-64 hidden md:flex border-r border-white/10" />
+
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
                                         <ChatInterface mode="learn" userData={userData} />
                                     </div>
