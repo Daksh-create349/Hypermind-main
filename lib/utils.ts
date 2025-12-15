@@ -91,42 +91,69 @@ export async function decodeAudioData(
  * Robustly parses JSON from a string that might contain extra text (e.g. Markdown).
  * Scans for the outermost {} pair that forms valid JSON.
  */
+/**
+ * Robustly parses JSON from a string that might contain extra text (e.g. Markdown).
+ * Scans for the outermost {} pair that forms valid JSON.
+ */
 export function parseJsonFromText(text: string): any {
   if (!text) return null;
 
-  // 1. Try cleaning markdown code blocks first
+  // 1. Try extracting from markdown code blocks first (most reliable)
+  const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/;
+  const match = text.match(jsonBlockRegex);
+  if (match) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (e) {
+      // Code block content wasn't valid JSON, continue to other methods
+    }
+  }
+
+  // 2. Try cleaning markdown code blocks (in case the above failed or didn't exist)
+  // We keep the content but remove the markers to help with direct parsing
   let clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-  // 2. Try direct parse
+  // 3. Try direct parse of the cleaned text
   try {
     return JSON.parse(clean);
   } catch (e) {
     // Continue to extraction logic
   }
 
-  // 3. Extract using brace counting
-  let start = clean.indexOf('{');
-  if (start === -1) return null;
+  // 4. Extract using brace counting - Iterative approach
+  // We look for the first substring that starts with { and forms a valid JSON object
+  let startIndex = 0;
+  while (true) {
+    const start = clean.indexOf('{', startIndex);
+    if (start === -1) break;
 
-  let braceCount = 0;
-  let end = -1;
+    let braceCount = 0;
+    let end = -1;
 
-  for (let i = start; i < clean.length; i++) {
-    if (clean[i] === '{') braceCount++;
-    else if (clean[i] === '}') {
-      braceCount--;
-      if (braceCount === 0) {
-        end = i;
-        // Try parsing the substring found so far. 
-        try {
-          const candidate = clean.substring(start, end + 1);
-          return JSON.parse(candidate);
-        } catch (e) {
-          // parsing failed
+    for (let i = start; i < clean.length; i++) {
+      if (clean[i] === '{') braceCount++;
+      else if (clean[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          end = i;
+          // Found a balanced block, try parsing
+          try {
+            const candidate = clean.substring(start, end + 1);
+            return JSON.parse(candidate);
+          } catch (e) {
+            // This block wasn't valid JSON, but maybe it was just a nested structure in a sentence?
+            // We continue searching from the next character after this '}' 
+            // (though strictly speaking, we might want to continue from start + 1, but this is an optimization)
+          }
+          break; // Break the inner loop to continue outer loop from where we left off or next char
         }
-        break;
       }
     }
+
+    // If we finished the inner loop and didn't return, advance startIndex
+    // If we found a balanced block that failed (end != -1), we can start searching after it.
+    // If we didn't find a balance (end == -1), we should probably just advance by 1
+    startIndex = (end !== -1) ? end + 1 : start + 1;
   }
 
   return null;
