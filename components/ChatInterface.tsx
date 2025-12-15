@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle } from 'lucide-react';
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle, Flame, Trophy, Gem } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
@@ -9,6 +9,7 @@ import { Quiz } from './Quiz';
 import { GenUI } from './GenUI';
 import { LiveSession } from './LiveSession';
 import { Certificate } from './Certificate';
+import { getGamificationStats, updateLoginStreak, addXP, getLevelTitle, UserStats } from '../lib/gamification';
 
 // Types
 export interface Topic {
@@ -71,6 +72,15 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
     const [topicModules, setTopicModules] = useState<Topic[] | null>(null);
     const [isLoadingModules, setIsLoadingModules] = useState(false);
+
+    // Gamification State
+    const [userStats, setUserStats] = useState<UserStats>(() => updateLoginStreak());
+
+    useEffect(() => {
+        const handleStatsUpdate = () => setUserStats(getGamificationStats());
+        window.addEventListener('gamification_update', handleStatsUpdate);
+        return () => window.removeEventListener('gamification_update', handleStatsUpdate);
+    }, []);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -293,6 +303,12 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         if (passed && currentModule) {
             if (!completedModules.includes(currentModule)) {
                 setCompletedModules(prev => [...prev, currentModule]);
+
+                // Gamification: Add XP
+                const { leveledUp } = addXP(100);
+                if (leveledUp) {
+                    handleSendMessage(`I just leveled up! Congratulations to me!`, true, true);
+                }
             }
         }
     };
@@ -503,24 +519,40 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         <div className="flex flex-col h-full relative">
             {/* Top Controls */}
             {/* Top Controls Header */}
-            <div className="w-full flex justify-end items-center gap-2 p-4 border-b border-white/5 bg-black/20 backdrop-blur-sm z-20">
-                {/* Map Toggle Button */}
-                <button
-                    onClick={() => setShowMap(true)}
-                    className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
-                    title="View Roadmap"
-                >
-                    <BrainCircuit size={16} />
-                </button>
+            <div className="w-full flex justify-between items-center gap-2 p-4 border-b border-white/5 bg-black/20 backdrop-blur-sm z-20">
+                {/* Gamification Stats (Left) */}
+                <div className="flex items-center gap-3 md:gap-4 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full">
+                        <Trophy size={14} className="text-yellow-500" />
+                        <span className="text-xs font-bold text-white whitespace-nowrap">Lvl {userStats.level} <span className="text-neutral-500 font-medium hidden sm:inline">• {getLevelTitle(userStats.level)}</span></span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full">
+                        <Flame size={14} className="text-orange-500 fill-orange-500/20" />
+                        <span className="text-xs font-bold text-white whitespace-nowrap">{userStats.streak} Day{userStats.streak !== 1 && 's'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full">
+                        <Gem size={14} className="text-blue-400" />
+                        <span className="text-xs font-bold text-white whitespace-nowrap">{userStats.xp} XP</span>
+                    </div>
+                </div>
 
-                <button
-                    onClick={() => setIsLiveOpen(true)}
-                    className="bg-neutral-900 hover:bg-neutral-800 text-white p-2 rounded-full border border-white/10 transition-all"
-                >
-                    <Phone size={16} fill="currentColor" />
-                </button>
+                {/* Right Controls */}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowMap(true)}
+                        className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
+                        title="View Roadmap"
+                    >
+                        <BrainCircuit size={16} />
+                    </button>
 
-
+                    <button
+                        onClick={() => setIsLiveOpen(true)}
+                        className="bg-neutral-900 hover:bg-neutral-800 text-white p-2 rounded-full border border-white/10 transition-all"
+                    >
+                        <Phone size={16} fill="currentColor" />
+                    </button>
+                </div>
             </div>
 
             {isLiveOpen && <LiveSession onClose={() => setIsLiveOpen(false)} />}
