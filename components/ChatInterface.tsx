@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw } from 'lucide-react';
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
@@ -33,10 +33,10 @@ interface Message {
     diagramData?: any;
     isError?: boolean;
     timestamp: string;
-    // Actions
     isAction?: boolean;
     actionType?: 'lesson_options' | 'quiz_result';
     actionData?: any;
+    youtubeQueries?: { title: string; query: string }[];
 }
 
 export interface ChatInterfaceProps {
@@ -45,17 +45,7 @@ export interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) {
-    const [messages, setMessages] = useState<Message[]>(() => {
-        const saved = localStorage.getItem('hypermind_chat_history');
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (e) {
-                console.error("Failed to parse chat history");
-            }
-        }
-        return [];
-    });
+    const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [currentMode, setCurrentMode] = useState(mode);
@@ -76,6 +66,11 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const [showCertificate, setShowCertificate] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
     const [certificateName, setCertificateName] = useState(userData?.name || "Student");
+
+    // Module Selection State
+    const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+    const [topicModules, setTopicModules] = useState<Topic[] | null>(null);
+    const [isLoadingModules, setIsLoadingModules] = useState(false);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,9 +94,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     }, [messages, isTyping]);
 
     // Persistence Effect
-    useEffect(() => {
-        localStorage.setItem('hypermind_chat_history', JSON.stringify(messages));
-    }, [messages]);
+
 
     useEffect(() => {
         localStorage.setItem('hypermind_progress', JSON.stringify(completedModules));
@@ -122,9 +115,10 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     1. For "Teach me" requests, provide clearly formatted, easy-to-understand TEXT explanations.
     2. JSON OUPUT (Only when requested or highly relevant):
        - Charts: { "genUi": { "type": "line-chart", ... } }
-       - Quizzes: { "quiz": { "questions": [...] } }
+       - Quizzes: { "quiz": { "questions": [{ "question": "...", "options": [...], "answer": "...", "explanation": "Detailed reason why this option is correct." }] } }
        - Diagrams: { "diagram": { "nodes": [], "edges": [] } }
        - Curriculum: { "curriculum": [...] } (ONLY if asked for a path/syllabus)
+       - YouTube: { "youtube": [{ "title": "Video Title", "query": "Exact Search Query for YouTube" }] } (ALWAYS include 1-2 search queries for every teaching topic)
     
     Separate JSON from text. Always prioritize helpful text explanations.`;
 
@@ -156,6 +150,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         let isCurriculum = false;
         let curriculumData: Topic[] = [];
         let genUiType, genUiData, genUiConfig, quizData, diagramData;
+        let youtubeQueries: { title: string; query: string }[] | undefined;
 
         try {
             const rawJson = parseJsonFromText(text);
@@ -166,6 +161,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                 if (json.quiz) { quizData = json.quiz; }
                 if (json.diagram) { diagramData = json.diagram; }
                 if (json.curriculum) { isCurriculum = true; curriculumData = json.curriculum; }
+                if (json.youtube) { youtubeQueries = json.youtube; }
 
                 content = content.replace(JSON.stringify(rawJson), '').replace(/```json[\s\S]*?```/g, '').replace(/```[\s\S]*?```/g, '').trim();
             }
@@ -179,7 +175,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             const parsed = marked.parse(content || " ");
             const htmlContent = typeof parsed === 'string' ? parsed : " ";
 
-            return { content, isCurriculum, curriculumData, htmlContent, genUiType, genUiData, genUiConfig, quizData, diagramData };
+            return { content, isCurriculum, curriculumData, htmlContent, genUiType, genUiData, genUiConfig, quizData, diagramData, youtubeQueries };
         } catch (e) {
             console.error("Processing Error", e);
             return { content: text, htmlContent: text };
@@ -318,6 +314,46 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         }
     };
 
+    // --- 2.5 MODULE GENERATION ---
+    const fetchModulesForTopic = async (topic: string) => {
+        if (!chatSession) return;
+
+        setSelectedTopic(topic);
+        setIsLoadingModules(true);
+        setTopicModules(null);
+
+        try {
+            const prompt = `Break down the topic "${topic}" into 4-6 key learning modules/sub-topics. 
+            Return strictly a JSON object with this structure: 
+            { "curriculum": [{ "id": "1", "title": "Module Title", "description": "Brief description" }] }`;
+
+            const result = await chatSession.sendMessage(prompt);
+            const processed = processResponse(result.response.text());
+
+            if (processed.curriculumData && processed.curriculumData.length > 0) {
+                setTopicModules(processed.curriculumData);
+            } else {
+                // Fallback if structured data fails
+                handleSendMessage(`Teach me about ${topic}`, false);
+                setSelectedTopic(null); // Cancel module flow
+            }
+        } catch (e) {
+            console.error("Module generation failed", e);
+            handleSendMessage(`Teach me about ${topic}`, false);
+            setSelectedTopic(null);
+        } finally {
+            setIsLoadingModules(false);
+        }
+    };
+
+    const handleModuleSelect = (module: Topic) => {
+        setTopicModules(null);
+        setSelectedTopic(null);
+        setShowMap(false);
+        setCurrentModule(module.title);
+        handleSendMessage(`Teach me about ${module.title}. Explain it in detail.`, false);
+    };
+
 
     // --- 3. INITIAL FLOWCHART RENDERER (The "No Blank Screen" Fix) ---
     // Memoize this data to prevent Diagram re-renders loops
@@ -394,17 +430,70 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                         <Diagram
                             data={initialDiagramData}
                             onNodeClick={(label) => {
-                                handleSendMessage(`Teach me about ${label} `, false);
-                                setShowMap(false); // Auto-close map on selection
+                                fetchModulesForTopic(label);
                             }}
                         />
                     </div>
                 )}
 
                 {/* Hint at bottom */}
-                <div className="absolute bottom-10 inset-x-0 text-center text-neutral-500 text-sm animate-pulse">
-                    Select a module to begin your lesson
-                </div>
+                {!topicModules && !isLoadingModules && (
+                    <div className="absolute bottom-10 inset-x-0 text-center text-neutral-500 text-sm animate-pulse">
+                        Select a topic to view modules
+                    </div>
+                )}
+
+                {/* Module Selection Overlay */}
+                {(topicModules || isLoadingModules) && (
+                    <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+                        <div className="bg-neutral-900 border border-white/10 w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl relative flex flex-col max-h-[80vh]">
+
+                            {isLoadingModules ? (
+                                <div className="p-12 flex flex-col items-center justify-center text-center">
+                                    <Loader2 size={40} className="text-white animate-spin mb-4" />
+                                    <h3 className="text-xl font-bold text-white mb-2">Analyzing Topic...</h3>
+                                    <p className="text-neutral-400">Generating learning modules for {selectedTopic}</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 bg-neutral-900 z-10">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-white">{selectedTopic}</h2>
+                                            <p className="text-neutral-400 text-sm">Select a module to start learning</p>
+                                        </div>
+                                        <button
+                                            onClick={() => { setTopicModules(null); setSelectedTopic(null); }}
+                                            className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors"
+                                        >
+                                            <X size={24} />
+                                        </button>
+                                    </div>
+
+                                    <div className="p-6 overflow-y-auto space-y-3">
+                                        {topicModules?.map((mod, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => handleModuleSelect(mod)}
+                                                className="w-full text-left bg-neutral-950 hover:bg-neutral-800 border border-white/5 hover:border-white/20 p-5 rounded-xl transition-all group flex items-start gap-4"
+                                            >
+                                                <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center flex-shrink-0 group-hover:bg-white group-hover:text-black transition-colors">
+                                                    <span className="font-bold text-sm">{idx + 1}</span>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h3 className="font-bold text-white group-hover:text-indigo-300 transition-colors mb-1 flex items-center gap-2">
+                                                        {mod.title}
+                                                        <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />
+                                                    </h3>
+                                                    <p className="text-sm text-neutral-400 line-clamp-2">{mod.description}</p>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -431,11 +520,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                     <Phone size={16} fill="currentColor" />
                 </button>
 
-                <div className="flex bg-black/50 backdrop-blur rounded-full border border-white/10 p-1">
-                    {['learn', 'practice', 'debate'].map(m => (
-                        <button key={m} onClick={() => setCurrentMode(m as any)} className={cn("px-3 py-1 rounded-full text-[10px] font-bold uppercase transition-all", currentMode === m ? "bg-white text-black" : "text-neutral-500 hover:text-neutral-300")}>{m}</button>
-                    ))}
-                </div>
+
             </div>
 
             {isLiveOpen && <LiveSession onClose={() => setIsLiveOpen(false)} />}
@@ -463,7 +548,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                                                     Ask a Doubt
                                                 </button>
                                                 <button
-                                                    onClick={() => handleSendMessage(`Generate a 5 question quiz for ${msg.actionData.module}.Return JSON: { "quiz": { "questions": [...] } } `, true, true)}
+                                                    onClick={() => handleSendMessage(`Generate a 5 question quiz for ${msg.actionData.module}.Return JSON: { "quiz": { "questions": [{ "question": "...", "options": [...], "answer": "...", "explanation": "Detailed explanation of why the answer is correct." }] } } `, true, true)}
                                                     className="px-6 py-3 rounded-xl bg-white text-black font-bold hover:bg-neutral-200 transition-all flex items-center gap-2 justify-center shadow-[0_0_20px_rgba(255,255,255,0.15)]"
                                                 >
                                                     <BrainCircuit size={16} /> Take Quiz
@@ -548,6 +633,34 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                                                         <div key={t.id} onClick={() => handleSendMessage(`Teach me about ${t.title}`, false)} className="text-sm text-neutral-400 hover:text-white transition-colors cursor-pointer border-l border-white/10 pl-4 hover:border-white">
                                                             {t.title}
                                                         </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {msg.youtubeQueries && msg.youtubeQueries.length > 0 && (
+                                            <div className="w-full mt-4 space-y-3">
+                                                <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                                    Recommended Video Searches
+                                                </h4>
+                                                <div className="flex gap-4 overflow-x-auto pb-2 -mx-2 px-2">
+                                                    {msg.youtubeQueries.map((item, idx) => (
+                                                        <a
+                                                            key={idx}
+                                                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(item.query)}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex-shrink-0 w-64 group cursor-pointer"
+                                                        >
+                                                            <div className="w-full aspect-video rounded-xl overflow-hidden bg-neutral-900 border border-white/10 relative mb-2 flex flex-col items-center justify-center p-4 bg-gradient-to-br from-neutral-900 to-neutral-800">
+                                                                <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg shadow-red-900/50">
+                                                                    <PlayCircle size={24} className="text-white fill-current" />
+                                                                </div>
+                                                                <p className="text-xs text-neutral-400 font-medium text-center">Search on YouTube</p>
+                                                            </div>
+                                                            <p className="text-sm font-medium text-neutral-300 group-hover:text-white line-clamp-2 leading-snug transition-colors">
+                                                                {item.title}
+                                                            </p>
+                                                        </a>
                                                     ))}
                                                 </div>
                                             </div>
