@@ -6,15 +6,16 @@ import { ChatInterface } from './components/ChatInterface';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
 import { BrainCircuit } from 'lucide-react';
+import { CustomCursor } from './components/ui/CustomCursor';
 
 export default function App() {
-    const [hasStarted, setHasStarted] = useState(() => !!localStorage.getItem('hypermind_user'));
-    const [isOnboarded, setIsOnboarded] = useState(() => !!localStorage.getItem('hypermind_user'));
+    const [hasStarted, setHasStarted] = useState(false);
+    const [isOnboarded, setIsOnboarded] = useState(false);
     const [userData, setUserData] = useState<any>(() => {
         const saved = localStorage.getItem('hypermind_user');
         return saved ? JSON.parse(saved) : null;
     });
-    const [showLanding, setShowLanding] = useState(() => !localStorage.getItem('hypermind_user'));
+    const [showLanding, setShowLanding] = useState(true);
 
     const handleStart = () => {
         setHasStarted(true);
@@ -41,6 +42,7 @@ export default function App() {
 
     return (
         <div className="h-screen w-full bg-black flex overflow-hidden relative selection:bg-white/30">
+            <CustomCursor />
             {/* Global Background Spotlight */}
             <Spotlight className="-top-40 left-0 opacity-40 z-0" fill="white" />
 
@@ -64,7 +66,7 @@ export default function App() {
                     {/* 1. Landing & Auth Layer */}
                     {showLanding && (
                         <div className={`absolute inset-0 z-30 transition-all duration-1000 ease-in-out transform will-change-transform ${hasStarted ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-                            <SplineSceneBasic onStart={handleStart} />
+                            <SplineSceneBasic onStart={handleStart} isLoggedIn={isOnboarded} />
                         </div>
                     )}
 

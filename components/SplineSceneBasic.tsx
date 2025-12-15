@@ -9,9 +9,10 @@ import { cn } from '../lib/utils';
 
 interface Props {
     onStart: () => void;
+    isLoggedIn?: boolean;
 }
 
-export function SplineSceneBasic({ onStart }: Props) {
+export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
     const [step, setStep] = useState<'intro' | 'auth'>('intro');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -26,6 +27,7 @@ export function SplineSceneBasic({ onStart }: Props) {
             onStart();
         }, 1500);
     };
+
 
     return (
         <Card className="w-full h-full bg-black/[0.96] relative overflow-hidden border-neutral-800 flex flex-col shadow-2xl">
@@ -70,6 +72,7 @@ export function SplineSceneBasic({ onStart }: Props) {
                         <p className="mt-6 text-lg text-neutral-400 max-w-lg leading-relaxed">
                             Your personal AI Learning Companion. Democratizing high-quality education with adaptive pathways.
                         </p>
+
 
                         <button
                             onClick={() => setStep('auth')}
