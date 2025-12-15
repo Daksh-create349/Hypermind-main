@@ -8,10 +8,13 @@ import { Spotlight } from './components/ui/spotlight';
 import { BrainCircuit } from 'lucide-react';
 
 export default function App() {
-    const [hasStarted, setHasStarted] = useState(false);
-    const [isOnboarded, setIsOnboarded] = useState(false);
-    const [userData, setUserData] = useState<any>(null);
-    const [showLanding, setShowLanding] = useState(true);
+    const [hasStarted, setHasStarted] = useState(() => !!localStorage.getItem('hypermind_user'));
+    const [isOnboarded, setIsOnboarded] = useState(() => !!localStorage.getItem('hypermind_user'));
+    const [userData, setUserData] = useState<any>(() => {
+        const saved = localStorage.getItem('hypermind_user');
+        return saved ? JSON.parse(saved) : null;
+    });
+    const [showLanding, setShowLanding] = useState(() => !localStorage.getItem('hypermind_user'));
 
     const handleStart = () => {
         setHasStarted(true);
@@ -21,6 +24,19 @@ export default function App() {
     const handleOnboardingComplete = (data: any) => {
         setUserData(data);
         setIsOnboarded(true);
+        localStorage.setItem('hypermind_user', JSON.stringify(data));
+    };
+
+    const handleReset = () => {
+        if (confirm("Are you sure you want to reset your progress? This cannot be undone.")) {
+            localStorage.removeItem('hypermind_user');
+            localStorage.removeItem('hypermind_chat_history'); // We will add this next
+            localStorage.removeItem('hypermind_progress'); // We will add this next
+            setUserData(null);
+            setIsOnboarded(false);
+            setHasStarted(false);
+            setShowLanding(true);
+        }
     };
 
     return (
@@ -63,7 +79,7 @@ export default function App() {
                             ) : (
                                 // Main App (Sidebar + Chat)
                                 <div className="flex h-full w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
-                                    <Sidebar mode={userData.mode || 'learn'} className="w-64 hidden md:flex border-r border-white/10" />
+                                    <Sidebar onReset={handleReset} mode={userData.mode || 'learn'} className="w-64 hidden md:flex border-r border-white/10" />
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
                                         <ChatInterface mode="learn" userData={userData} />
                                     </div>

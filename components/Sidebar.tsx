@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { FileText, FileAudio, Link as LinkIcon, MoreHorizontal, Settings, HelpCircle, UploadCloud } from 'lucide-react';
+import { FileText, FileAudio, Link as LinkIcon, MoreHorizontal, Settings, HelpCircle, UploadCloud, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-export function Sidebar({ className, mode }: { className?: string; mode?: string }) {
+export function Sidebar({ className, mode, onReset }: { className?: string; mode?: string; onReset?: () => void }) {
     const [activeId, setActiveId] = useState<number | null>(null);
     const [sources, setSources] = useState<any[]>([]);
 
@@ -94,6 +94,12 @@ export function Sidebar({ className, mode }: { className?: string; mode?: string
                     <HelpCircle size={16} />
                     <span>Help & Support</span>
                 </button>
+                {onReset && (
+                    <button onClick={onReset} className="flex items-center gap-3 p-2 text-red-500 hover:text-red-400 hover:bg-neutral-900/50 rounded-lg transition-colors text-sm font-medium mt-2">
+                        <Trash2 size={16} />
+                        <span>Reset Progress</span>
+                    </button>
+                )}
             </div>
         </div>
     );

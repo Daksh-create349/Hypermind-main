@@ -45,7 +45,17 @@ export interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) {
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<Message[]>(() => {
+        const saved = localStorage.getItem('hypermind_chat_history');
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                console.error("Failed to parse chat history");
+            }
+        }
+        return [];
+    });
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [currentMode, setCurrentMode] = useState(mode);
@@ -58,7 +68,10 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const [showMap, setShowMap] = useState(false);
 
     // Learning Path State
-    const [completedModules, setCompletedModules] = useState<string[]>([]);
+    const [completedModules, setCompletedModules] = useState<string[]>(() => {
+        const saved = localStorage.getItem('hypermind_progress');
+        return saved ? JSON.parse(saved) : [];
+    });
     const [currentModule, setCurrentModule] = useState<string | null>(null);
     const [showCertificate, setShowCertificate] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
@@ -84,6 +97,15 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             setTimeout(() => scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }), 100);
         }
     }, [messages, isTyping]);
+
+    // Persistence Effect
+    useEffect(() => {
+        localStorage.setItem('hypermind_chat_history', JSON.stringify(messages));
+    }, [messages]);
+
+    useEffect(() => {
+        localStorage.setItem('hypermind_progress', JSON.stringify(completedModules));
+    }, [completedModules]);
 
     useEffect(() => {
         const initChat = async () => {
