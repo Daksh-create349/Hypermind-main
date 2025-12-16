@@ -140,7 +140,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                     }));
 
                 const chat = ai.chats.create({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-2.5-flash-lite',
                     config: { systemInstruction },
                     history: history
                 });
