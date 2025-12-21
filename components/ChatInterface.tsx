@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle, Flame, Trophy, Gem } from 'lucide-react';
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle, Flame, Trophy, Gem, FileText } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
@@ -9,6 +9,7 @@ import { Quiz } from './Quiz';
 import { GenUI } from './GenUI';
 import { LiveSession } from './LiveSession';
 import { Certificate } from './Certificate';
+import { NotesInterface } from './NotesInterface';
 import { getGamificationStats, updateLoginStreak, addXP, getLevelTitle, UserStats } from '../lib/gamification';
 
 // Types
@@ -57,6 +58,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const [isProcessingFile, setIsProcessingFile] = useState(false);
     const [isLiveOpen, setIsLiveOpen] = useState(false);
     const [showMap, setShowMap] = useState(false);
+    const [showNotes, setShowNotes] = useState(false);
 
     // Learning Path State
     const [completedModules, setCompletedModules] = useState<string[]>(() => {
@@ -547,6 +549,14 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                     </button>
 
                     <button
+                        onClick={() => setShowNotes(true)}
+                        className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
+                        title="Smart Notes"
+                    >
+                        <FileText size={16} />
+                    </button>
+
+                    <button
                         onClick={() => setIsLiveOpen(true)}
                         className="bg-neutral-900 hover:bg-neutral-800 text-white p-2 rounded-full border border-white/10 transition-all"
                     >
@@ -556,6 +566,13 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             </div>
 
             {isLiveOpen && <LiveSession onClose={() => setIsLiveOpen(false)} />}
+            {showNotes && (
+                <NotesInterface
+                    onClose={() => setShowNotes(false)}
+                    chatSession={chatSession}
+                    currentContext={messages.map(m => m.content).join('\n')}
+                />
+            )}
 
             {/* Message Stream */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-10 pb-4">

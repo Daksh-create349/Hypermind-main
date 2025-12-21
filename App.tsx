@@ -6,7 +6,7 @@ import { ChatInterface } from './components/ChatInterface';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
 import { BrainCircuit } from 'lucide-react';
-import { CustomCursor } from './components/ui/CustomCursor';
+
 
 export default function App() {
     const [hasStarted, setHasStarted] = useState(false);
@@ -32,7 +32,7 @@ export default function App() {
 
     return (
         <div className="h-screen w-full bg-black flex overflow-hidden relative selection:bg-white/30">
-            <CustomCursor />
+
             {/* Global Background Spotlight */}
             <Spotlight className="-top-40 left-0 opacity-40 z-0" fill="white" />
 
