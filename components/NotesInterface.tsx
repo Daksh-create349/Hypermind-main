@@ -31,7 +31,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 // Custom Node Style
-const defaultNodeStyle = {
+const defaultNodeStyle: React.CSSProperties = {
     background: '#171717',
     color: '#fff',
     border: '1px solid #3f3f46',

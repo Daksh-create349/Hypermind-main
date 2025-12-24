@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SplineSceneBasic } from './components/SplineSceneBasic';
 import { Onboarding } from './components/Onboarding';
 
@@ -6,79 +6,127 @@ import { ChatInterface } from './components/ChatInterface';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
 import { BrainCircuit } from 'lucide-react';
+import { useUser, SignedIn, SignedOut } from '@clerk/clerk-react';
 
 
 export default function App() {
+    const { isSignedIn, user, isLoaded } = useUser();
     const [hasStarted, setHasStarted] = useState(false);
     const [isOnboarded, setIsOnboarded] = useState(false);
-    const [userData, setUserData] = useState<any>(() => {
-        const saved = localStorage.getItem('hypermind_user');
-        return saved ? JSON.parse(saved) : null;
-    });
+    const [dbUser, setDbUser] = useState<any>(null);
     const [showLanding, setShowLanding] = useState(true);
 
-    const handleStart = () => {
+    // Sync User with Backend when Signed In
+    useEffect(() => {
+        // Log state execution for debugging
+        console.log("App Auth State:", { isLoaded, isSignedIn, hasUser: !!user });
+
+        if (isLoaded && isSignedIn && user) {
+            // 1. Immediately transition UI to prevent loop/glitch
+            if (!hasStarted) {
+                console.log("User loaded, starting app...");
+                setHasStarted(true);
+                setTimeout(() => setShowLanding(false), 800);
+            }
+
+            // 2. Sync to DB in background
+            const syncUser = async () => {
+                try {
+                    const res = await fetch('/api/user/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: user.primaryEmailAddress?.emailAddress,
+                            clerkId: user.id,
+                            name: user.fullName,
+                            image: user.imageUrl,
+                            provider: 'clerk'
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        setDbUser(data);
+                        if (data?.progress?.completedModules?.length > 0) {
+                            setIsOnboarded(true);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Sync error (non-fatal):", error);
+                }
+            };
+
+            syncUser();
+        }
+    }, [isLoaded, isSignedIn, user]); // Removed hasStarted from deps to prevent loops
+
+    const handleStart = React.useCallback(() => {
         setHasStarted(true);
-        setTimeout(() => setShowLanding(false), 1200); // Wait for transition + buffer
-    };
+        setTimeout(() => setShowLanding(false), 1200);
+    }, []);
 
-    const handleOnboardingComplete = (data: any) => {
-        setUserData(data);
+    const handleOnboardingComplete = async (data: any) => {
         setIsOnboarded(true);
-        localStorage.setItem('hypermind_user', JSON.stringify(data));
+        if (isSignedIn && user) {
+            try {
+                await fetch('/api/user/onboarding', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: user.primaryEmailAddress?.emailAddress,
+                        data: data
+                    })
+                });
+            } catch (e) {
+                console.error("Failed to save onboarding", e);
+            }
+        }
     };
 
+    if (!isLoaded) {
+        return (
+            <div className="h-screen w-full bg-black flex items-center justify-center text-white">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-8 h-8 border-t-2 border-white rounded-full animate-spin"></div>
+                    <p className="text-neutral-500 text-sm animate-pulse">Initializing HyperMind...</p>
+                </div>
+            </div>
+        );
+    }
 
-
+    // We keep the sync logic, but move the UI control to Clerk components
     return (
         <div className="h-screen w-full bg-black flex overflow-hidden relative selection:bg-white/30">
-
             {/* Global Background Spotlight */}
             <Spotlight className="-top-40 left-0 opacity-40 z-0" fill="white" />
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col h-full relative z-10 p-0">
-
-                {/* Header Area (Visible only during Onboarding) */}
-                {!isOnboarded && (
-                    <header className={`h-16 border-b border-white/10 flex items-center px-6 justify-between bg-black/40 backdrop-blur-sm ${!hasStarted ? 'hidden' : 'flex'} z-50`}>
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
-                                <BrainCircuit size={18} className="text-black" />
-                            </div>
-                            <span className="font-bold text-white text-lg tracking-tight">HyperMind</span>
-                        </div>
-                    </header>
-                )}
-
                 <main className="flex-1 overflow-hidden p-0 flex flex-col relative w-full h-full">
 
-                    {/* 1. Landing & Auth Layer */}
-                    {showLanding && (
-                        <div className={`absolute inset-0 z-30 transition-all duration-1000 ease-in-out transform will-change-transform ${hasStarted ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
-                            <SplineSceneBasic onStart={handleStart} isLoggedIn={isOnboarded} />
+                    {/* SHOW LANDING ONLY WHEN SIGNED OUT */}
+                    <SignedOut>
+                        <div className="absolute inset-0 z-30">
+                            <SplineSceneBasic onStart={() => { }} />
                         </div>
-                    )}
+                    </SignedOut>
 
-                    {/* 2. Application Layer */}
-                    <div className={`absolute inset-0 flex flex-col h-full w-full transition-all duration-1000 delay-300 will-change-transform ${hasStarted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20'}`}>
+                    {/* SHOW DASHBOARD ONLY WHEN SIGNED IN */}
+                    <SignedIn>
                         <ErrorBoundary>
                             {!isOnboarded ? (
-                                // Onboarding Screen (Includes Dashboard Summary Step)
                                 <div className="flex-1 min-h-0 animate-in fade-in zoom-in-95 duration-700 p-6 md:p-8">
                                     <Onboarding onComplete={handleOnboardingComplete} />
                                 </div>
                             ) : (
-                                // Main App (Sidebar + Chat)
                                 <div className="flex h-full w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
-
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
-                                        <ChatInterface mode="learn" userData={userData} />
+                                        <ChatInterface mode="learn" userData={{ ...dbUser, ...user }} />
                                     </div>
                                 </div>
                             )}
                         </ErrorBoundary>
-                    </div>
+                    </SignedIn>
 
                 </main>
             </div>

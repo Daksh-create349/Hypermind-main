@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { SplineScene } from "./ui/spline";
 import { Card } from "./ui/card"
 import { Spotlight } from "./ui/spotlight"
 import { ArrowRight, Mail, Lock, Github, ArrowLeft, Globe } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { SignIn } from '@clerk/clerk-react';
 
 interface Props {
     onStart: () => void;
@@ -17,6 +18,8 @@ export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+
+    // Removed local useEffect to avoid conflict with App.tsx logic
 
     const handleAuth = (e: React.FormEvent) => {
         e.preventDefault();
@@ -106,60 +109,25 @@ export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
                                 <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" /> Back
                             </button>
 
-                            <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
-                            <p className="text-neutral-400 mb-8">Sign in to continue your learning journey.</p>
-
-                            <form onSubmit={handleAuth} className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-neutral-300 ml-1">Email</label>
-                                    <div className="relative group">
-                                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
-                                        <input
-                                            type="email"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full bg-neutral-900/50 border border-neutral-800 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-neutral-600 focus:outline-none focus:border-indigo-500/50 focus:bg-neutral-900 transition-all"
-                                            placeholder="student@hypermind.ai"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-neutral-300 ml-1">Password</label>
-                                    <div className="relative group">
-                                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
-                                        <input
-                                            type="password"
-                                            value={password}
-                                            onChange={(e) => setPassword(e.target.value)}
-                                            className="w-full bg-neutral-900/50 border border-neutral-800 rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-neutral-600 focus:outline-none focus:border-indigo-500/50 focus:bg-neutral-900 transition-all"
-                                            placeholder="••••••••"
-                                            required
-                                        />
-                                    </div>
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    disabled={isLoadingAuth}
-                                    className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-500 transition-all hover:shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait mt-4"
-                                >
-                                    {isLoadingAuth ? "Authenticating..." : "Sign In"}
-                                </button>
-                            </form>
-
-                            <div className="relative my-8">
-                                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-neutral-800"></div></div>
-                                <div className="relative flex justify-center text-xs uppercase"><span className="bg-black/90 px-2 text-neutral-500">Or continue with</span></div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <button type="button" className="flex items-center justify-center gap-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 hover:border-neutral-700 text-white py-2.5 rounded-xl transition-all">
-                                    <Github size={18} /> GitHub
-                                </button>
-                                <button type="button" className="flex items-center justify-center gap-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 hover:border-neutral-700 text-white py-2.5 rounded-xl transition-all">
-                                    <Globe size={18} /> Google
-                                </button>
+                            <div className="w-full flex justify-center">
+                                <SignIn
+                                    appearance={{
+                                        elements: {
+                                            card: "bg-neutral-900 border border-neutral-800 shadow-none w-full",
+                                            headerTitle: "text-white",
+                                            headerSubtitle: "text-neutral-400",
+                                            socialButtonsBlockButton: "text-white border-neutral-700 hover:bg-neutral-800",
+                                            dividerLine: "bg-neutral-800",
+                                            dividerText: "text-neutral-500",
+                                            formFieldLabel: "text-neutral-300",
+                                            formFieldInput: "bg-neutral-800 border-neutral-700 text-white",
+                                            footerActionLink: "text-indigo-400 hover:text-indigo-300",
+                                            formButtonPrimary: "bg-indigo-600 hover:bg-indigo-500 text-white"
+                                        }
+                                    }}
+                                    signUpUrl="#"
+                                    forceRedirectUrl="/"
+                                />
                             </div>
                         </div>
                     </div>

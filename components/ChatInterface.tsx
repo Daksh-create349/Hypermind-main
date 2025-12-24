@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { UserButton } from '@clerk/clerk-react';
 import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle, Flame, Trophy, Gem, FileText } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
@@ -135,7 +136,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     Separate JSON from text. Always prioritize helpful text explanations.`;
 
                 const history = messages
-                    .filter(m => m.id !== 'init' && !m.isError)
+                    .filter(m => !m.isError)
                     .map(m => ({
                         role: m.role === 'user' ? 'user' : 'model',
                         parts: [{ text: m.content }]
@@ -345,8 +346,8 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             Return strictly a JSON object with this structure: 
             { "curriculum": [{ "id": "1", "title": "Module Title", "description": "Brief description" }] }`;
 
-            const result = await chatSession.sendMessage(prompt);
-            const processed = processResponse(result.response.text());
+            const result = await chatSession.sendMessage({ message: prompt });
+            const processed = processResponse(result.text);
 
             if (processed.curriculumData && processed.curriculumData.length > 0) {
                 setTopicModules(processed.curriculumData);
@@ -540,6 +541,9 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
 
                 {/* Right Controls */}
                 <div className="flex items-center gap-2">
+                    <div className="mr-2">
+                        <UserButton afterSignOutUrl="/" />
+                    </div>
                     <button
                         onClick={() => setShowMap(true)}
                         className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
