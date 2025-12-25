@@ -33,7 +33,7 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
     dagreGraph.setDefaultEdgeLabel(() => ({}));
 
     // Increased node separation for a clearer vertical hierarchy
-    dagreGraph.setGraph({ rankdir: direction, nodesep: 60, ranksep: 80 });
+    dagreGraph.setGraph({ rankdir: 'LR', nodesep: 40, ranksep: 120 });
 
     nodes.forEach((node) => {
         dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -59,15 +59,25 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => 
 
 // Custom Node Component (Monochrome)
 const CustomNode = ({ data }: any) => {
-    return (
-        <div className="px-6 py-4 shadow-[0_0_15px_rgba(255,255,255,0.05)] rounded-full bg-neutral-950 border border-white/10 min-w-[220px] text-center relative group transition-all duration-500 hover:border-white/40 hover:shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-105">
-            <Handle type="target" position={Position.Top} className="!bg-white !w-2 !h-2 !-top-1 !border-none transition-all" />
+    // Determine styles based on internal type found in data payload
+    const isMain = data.type === 'main';
+    const isPhase = data.type === 'phase';
 
-            <div className="flex items-center justify-center gap-2">
-                <div className="font-bold text-neutral-200 text-sm tracking-wide group-hover:text-white transition-colors">{data.label}</div>
+    return (
+        <div className={cn(
+            "px-6 py-4 rounded-xl border min-w-[200px] text-center relative group transition-all duration-300 hover:-translate-y-1",
+            isMain ? "bg-white text-black border-white shadow-[0_0_30px_rgba(255,255,255,0.3)] scale-110" :
+                isPhase ? "bg-neutral-900 border-white/40 shadow-[0_0_20px_rgba(0,0,0,0.5)]" :
+                    "bg-neutral-950 border-white/10 opacity-80 hover:opacity-100 hover:border-white/40"
+        )}>
+            <Handle type="target" position={Position.Left} className={cn("!w-3 !h-3 !-left-1.5 transition-all !border-4 !border-neutral-900", isMain ? "!bg-black" : "!bg-white")} />
+
+            <div className="flex items-center justify-center gap-3">
+                {!isMain && <div className={cn("w-2 h-2 rounded-full transition-colors", isPhase ? "bg-white" : "bg-neutral-600 group-hover:bg-white")} />}
+                <div className={cn("font-bold transition-colors text-sm tracking-wide", isMain ? "text-black" : "text-neutral-300 group-hover:text-white")}>{data.label}</div>
             </div>
 
-            <Handle type="source" position={Position.Bottom} className="!bg-white !w-2 !h-2 !-bottom-1 !border-none" />
+            <Handle type="source" position={Position.Right} className={cn("!w-3 !h-3 !-right-1.5 transition-all !border-4 !border-neutral-900", isMain ? "!bg-black" : "!bg-white")} />
         </div>
     );
 };
@@ -96,11 +106,10 @@ export function Diagram({ data, onNodeClick }: DiagramProps) {
             label: e.label,
             type: 'smoothstep',
             animated: true,
-            style: { stroke: '#52525b', strokeWidth: 1.5 },
-            labelStyle: { fill: '#a1a1aa', fontWeight: 500, fontSize: 10 },
+            style: { stroke: '#ffffff', strokeWidth: 2, opacity: 0.3 },
             markerEnd: {
                 type: MarkerType.ArrowClosed,
-                color: '#52525b',
+                color: '#ffffff',
             },
         }));
 

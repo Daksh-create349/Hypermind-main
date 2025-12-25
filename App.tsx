@@ -7,6 +7,9 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
 import { BrainCircuit } from 'lucide-react';
 import { useUser, SignedIn, SignedOut } from '@clerk/clerk-react';
+import { CouncilInterface } from './components/council/CouncilInterface';
+import { CouncilSetup } from './components/council/CouncilSetup';
+import { AgentConfig } from './lib/council/types';
 
 
 export default function App() {
@@ -15,6 +18,13 @@ export default function App() {
     const [isOnboarded, setIsOnboarded] = useState(false);
     const [dbUser, setDbUser] = useState<any>(null);
     const [showLanding, setShowLanding] = useState(true);
+
+    // Council State
+    const [showCouncil, setShowCouncil] = useState(false);
+    const [showSetup, setShowSetup] = useState(false);
+    const [councilConfig, setCouncilConfig] = useState<AgentConfig[]>([]);
+    const [councilTopic, setCouncilTopic] = useState("");
+    const [councilContext, setCouncilContext] = useState("");
 
     // Sync User with Backend when Signed In
     useEffect(() => {
@@ -67,6 +77,9 @@ export default function App() {
 
     const handleOnboardingComplete = async (data: any) => {
         setIsOnboarded(true);
+        // Immediate local update for UI
+        setDbUser((prev: any) => ({ ...prev, onboarding: data }));
+
         if (isSignedIn && user) {
             try {
                 await fetch('/api/user/onboarding', {
@@ -121,7 +134,11 @@ export default function App() {
                             ) : (
                                 <div className="flex h-full w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
-                                        <ChatInterface mode="learn" userData={{ ...dbUser, ...user }} />
+                                        <ChatInterface
+                                            mode="learn"
+                                            userData={{ ...dbUser, ...user }}
+                                            onLaunchCouncil={() => setShowSetup(true)}
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -130,6 +147,31 @@ export default function App() {
 
                 </main>
             </div>
+
+            {/* Council Modals */}
+            {showSetup && (
+                <CouncilSetup
+                    userProfile={{ ...dbUser, ...user }}
+                    onCancel={() => setShowSetup(false)}
+                    onStart={(config, topic, context) => {
+                        setCouncilConfig(config);
+                        setCouncilTopic(topic);
+                        setCouncilContext(context);
+                        setShowSetup(false);
+                        setShowCouncil(true);
+                    }}
+                />
+            )}
+
+            {showCouncil && (
+                <CouncilInterface
+                    topic={councilTopic}
+                    context={councilContext}
+                    initialAgents={councilConfig}
+                    userProfile={{ ...dbUser, ...user }}
+                    onClose={() => setShowCouncil(false)}
+                />
+            )}
         </div>
     );
 }

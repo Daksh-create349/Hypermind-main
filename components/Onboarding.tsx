@@ -167,7 +167,11 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
         return {
             primaryGoal,
-            secondaryGoals: vectors
+            roadmap: [
+                { title: "Phase 1: Foundations", topics: [vectors[0] || "Basics"] },
+                { title: "Phase 2: Core Concepts", topics: [vectors[1] || "Intermediate"] },
+                { title: "Phase 3: Advanced Application", topics: [vectors[2] || "Advanced"] }
+            ]
         };
     };
 
@@ -186,8 +190,15 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             - Score: ${formData.assessmentScore}
             - Analysis: ${formData.assessmentAnalysis}
             
-            Based on the profile AND assessment analysis, create a tailored curriculum summary.
-            Return JSON: { "primaryGoal": "string", "secondaryGoals": ["string", "string", "string"] }
+            Based on the profile AND assessment analysis, create a tailored curriculum roadmap.
+            Return JSON: { 
+                "primaryGoal": "string",
+                "roadmap": [
+                    { "title": "Phase 1: Foundation", "topics": ["Basics", "History", "Core Concepts"] },
+                    { "title": "Phase 2: Application", "topics": ["Techniques", "Tools", "Practice"] },
+                    { "title": "Phase 3: Mastery", "topics": ["Advanced Theory", "Innovation", "Capstone"] }
+                ]
+            }
         `;
 
         try {
@@ -370,12 +381,20 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                                 </div>
                                 <div className="space-y-3">
                                     <h3 className="text-xs font-mono text-neutral-500 uppercase tracking-widest mb-2 flex items-center gap-2"><Layout size={12} /> Key Vectors</h3>
-                                    {curriculum?.secondaryGoals?.map((goal: string, i: number) => (
-                                        <div key={i} className="flex gap-4 items-start p-4 bg-neutral-900/30 border border-white/5 rounded-xl hover:bg-neutral-900/60 transition-colors">
-                                            <div className="mt-0.5 w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-mono text-white">0{i + 1}</div>
-                                            <p className="text-sm text-neutral-300 font-medium">{goal}</p>
-                                        </div>
-                                    ))}
+                                    <h3 className="text-xs font-mono text-neutral-500 uppercase tracking-widest mb-2 flex items-center gap-2"><Layout size={12} /> Strategic Roadmap</h3>
+                                    <div className="relative border-l border-white/10 ml-3 space-y-6 py-2">
+                                        {curriculum?.roadmap?.map((phase: any, i: number) => (
+                                            <div key={i} className="pl-6 relative">
+                                                <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-neutral-800 border border-white/20 group-hover:bg-white transition-colors" />
+                                                <h4 className="text-sm font-bold text-white mb-1">{phase.title}</h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {phase.topics.map((t: string, j: number) => (
+                                                        <span key={j} className="text-xs text-neutral-400 bg-neutral-900 border border-white/5 px-2 py-1 rounded-md">{t}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                                 {formData.assessmentAnalysis && (
                                     <div className="bg-indigo-950/20 border border-indigo-500/20 rounded-2xl p-6 animate-in fade-in slide-in-from-bottom-4">

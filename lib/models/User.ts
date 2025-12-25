@@ -38,6 +38,8 @@ export interface IUser {
         motivation: string;
         assessmentScore?: number;
         primaryGoal?: string;
+        secondaryGoals?: string[];
+        roadmap?: Array<{ title: string; topics: string[] }>;
     };
 
     createdAt: Date;
@@ -95,7 +97,12 @@ const UserSchema = new Schema<IUser>(
             learningDepth: String,
             motivation: String,
             assessmentScore: Number,
-            primaryGoal: String
+            primaryGoal: String,
+            secondaryGoals: [String],
+            roadmap: [{
+                title: String,
+                topics: [String]
+            }]
         }
     },
     { timestamps: true }

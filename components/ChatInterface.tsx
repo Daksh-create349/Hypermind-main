@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { SplineScene } from './ui/spline';
 import { UserButton } from '@clerk/clerk-react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, PlayCircle, Flame, Trophy, Gem, FileText } from 'lucide-react';
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, ChevronLeft, PlayCircle, Flame, Trophy, Gem, FileText, Sparkles, Gavel, Minus } from 'lucide-react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
@@ -11,7 +12,9 @@ import { GenUI } from './GenUI';
 import { LiveSession } from './LiveSession';
 import { Certificate } from './Certificate';
 import { NotesInterface } from './NotesInterface';
+import { Leaderboard } from './Leaderboard';
 import { getGamificationStats, updateLoginStreak, addXP, getLevelTitle, UserStats } from '../lib/gamification';
+import { getRandomApiKey } from '../lib/apiKeys';
 
 // Types
 export interface Topic {
@@ -19,6 +22,37 @@ export interface Topic {
     title: string;
     description: string;
 }
+
+const PERSONAS = [
+    {
+        id: 'musk',
+        name: 'Elon Musk',
+        role: 'First Principles Thinker',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/3/34/Elon_Musk_Royal_Society_%28crop2%29.jpg',
+        prompt: 'Explain via first principles. Focus on physics, cost-optimization, and future impact. Be direct, use engineering analogies, and be slightly brusque.'
+    },
+    {
+        id: 'feynman',
+        name: 'Richard Feynman',
+        role: 'The Great Explainer',
+        img: 'https://upload.wikimedia.org/wikipedia/en/4/42/Richard_Feynman_Nobel.jpg',
+        prompt: 'Use no jargon. Use simple real-world analogies (like rubber bands or water). Be playful, curious, and energetic. If you can\'t explain it to a 5-year-old, you don\'t understand it.'
+    },
+    {
+        id: 'socrates',
+        name: 'Socrates',
+        role: 'The Philosopher',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/b/bc/Socrate_du_Louvre.jpg',
+        prompt: 'Don\'t just give answers. Ask guiding questions. Use the Socratic method to lead me to the truth. Challenge my assumptions.'
+    },
+    {
+        id: 'jobs',
+        name: 'Steve Jobs',
+        role: 'Visionary',
+        img: 'https://upload.wikimedia.org/wikipedia/commons/b/b9/Steve_Jobs_Headshot_2010-CROP.jpg',
+        prompt: 'Focus on aesthetics, simplicity, and user experience. Be demanding but inspiring. Use words like "magic", "craft", and "insanely great". Focus on the "why" not just the "how".'
+    }
+];
 
 interface Message {
     id: number;
@@ -45,9 +79,10 @@ interface Message {
 export interface ChatInterfaceProps {
     userData?: any;
     mode?: 'learn' | 'practice' | 'debate';
+    onLaunchCouncil?: () => void;
 }
 
-export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) {
+export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: ChatInterfaceProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -70,11 +105,19 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const [showCertificate, setShowCertificate] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
     const [certificateName, setCertificateName] = useState(userData?.name || "Student");
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
 
     // Module Selection State
     const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
     const [topicModules, setTopicModules] = useState<Topic[] | null>(null);
     const [isLoadingModules, setIsLoadingModules] = useState(false);
+
+    // Persona State
+    const [showPersonaSelector, setShowPersonaSelector] = useState(false);
+    const [targetModule, setTargetModule] = useState<string | null>(null);
+    const [selectedPersona, setSelectedPersona] = useState<typeof PERSONAS[0] | null>(null);
+    const [showCustomInput, setShowCustomInput] = useState(false);
+    const [customPrompt, setCustomPrompt] = useState("");
 
     // Gamification State
     const [userStats, setUserStats] = useState<UserStats>(() => updateLoginStreak());
@@ -121,7 +164,11 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             }
 
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                // ROTATION LOGIC: Pick a random key from the pool for general chat
+                const apiKey = getRandomApiKey();
+                // console.log("Initializing Chat with Key rotation...", apiKey.slice(0, 5) + "...");
+
+                const ai = new GoogleGenAI({ apiKey: apiKey });
                 const systemInstruction = `You are HyperMind, an advanced AI tutor.
     
     RULES:
@@ -198,10 +245,15 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
     const handleSendMessage = async (text: string = inputValue, hidden: boolean = false, isQuizRequest: boolean = false) => {
         if ((!text.trim() && attachedImages.length === 0) || !chatSession) return;
 
+        // Local variable to track the *intended* current module for this message
+        // This fixes the stale state bug inside the setTimeout
+        let activeModule = currentModule;
+
         // Track current module if user is asking to learn
         if (text.startsWith("Teach me about")) {
             const modName = text.replace("Teach me about ", "");
             setCurrentModule(modName);
+            activeModule = modName; // Update local ref immediately
             // Append instruction to ensure text response
             if (!hidden) text = `Teach me about ${modName}. Explain it in detail with examples.`;
         }
@@ -236,7 +288,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
 
             // CHECK: If this is a lesson explanation, append ACTION BUTTONS
             // We assume it's a lesson if we have a currentModule AND it's not a quiz/diagram response
-            if ((text.startsWith("Teach me about") && !processed.quizData) || (currentModule && !processed.quizData && !processed.isAction && !isQuizRequest && !text.includes("doubt") && !text.includes("Generate a 5 question quiz"))) {
+            if ((text.startsWith("Teach me about") && !processed.quizData) || (activeModule && !processed.quizData && !processed.isAction && !isQuizRequest && !text.includes("doubt") && !text.includes("Generate a 5 question quiz"))) {
                 setTimeout(() => {
                     const actionMsg: Message = {
                         id: Date.now() + 2,
@@ -244,7 +296,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                         content: "",
                         isAction: true,
                         actionType: 'lesson_options',
-                        actionData: { module: currentModule },
+                        actionData: { module: activeModule }, // Use local variable
                         timestamp: new Date().toLocaleTimeString()
                     };
                     setMessages(prev => [...prev, actionMsg]);
@@ -254,17 +306,27 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         } catch (error: any) {
             console.error("AI Error:", error);
 
+            console.error("AI Error:", error);
+
             const isQuota = error.message?.includes('429') || error.status === 429 || error.toString().includes('Quota') || error.toString().includes('429');
-            const errorMessage = isQuota ? "API Quota Exceeded. Please try again later." : "I encountered a connection error. Please try again.";
-            const errorHtml = isQuota
-                ? `<p class="text-red-400 font-bold">⚠️ API Quota Limit Reached</p><p class="text-neutral-500 text-sm">The AI service is temporarily unavailable due to high traffic. Please try again in a few minutes.</p>`
-                : `<p class="text-neutral-400 font-bold">Connection Error</p>`;
+            const isKeyError = error.message?.includes('400') || error.status === 400 || error.message?.includes('403') || error.status === 403 || error.message?.includes('API key');
+
+            let errorMessage = "I encountered a connection error. Please try again.";
+            let errorHtml = `<p class="text-neutral-400 font-bold">Connection Error</p>`;
+
+            if (isQuota) {
+                errorMessage = "API Quota Exceeded. Please try again later.";
+                errorHtml = `<p class="text-red-400 font-bold">⚠️ API Quota Limit Reached</p><p class="text-neutral-500 text-sm">The AI service is temporarily unavailable due to high traffic. Please try again in a few minutes.</p>`;
+            } else if (isKeyError) {
+                errorMessage = "Invalid API Key. Please check your configuration.";
+                errorHtml = `<p class="text-red-400 font-bold">🔑 Invalid API Key</p><p class="text-neutral-500 text-sm">Please check your .env file and ensure the API key is correct and has the necessary permissions. You may need to restart the server.</p>`;
+            }
 
             const errorMsg: Message = {
                 id: Date.now() + 1,
                 role: 'ai',
                 content: errorMessage,
-                htmlContent: errorHtml,
+                htmlContent: errorHtml + `<div class="mt-2"><button onclick="window.location.reload()" class="bg-red-500/10 text-red-400 px-3 py-1 rounded text-xs hover:bg-red-500/20 transition-colors">↻ Switch API Key & Retry</button></div>`,
                 isError: true,
                 timestamp: new Date().toLocaleTimeString()
             };
@@ -308,9 +370,21 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                 setCompletedModules(prev => [...prev, currentModule]);
 
                 // Gamification: Add XP
-                const { leveledUp } = addXP(100);
+                const { stats: newStats, leveledUp } = addXP(100);
                 if (leveledUp) {
                     handleSendMessage(`I just leveled up! Congratulations to me!`, true, true);
+                }
+
+                // Sync with backend
+                if (userData?.email) {
+                    fetch('http://localhost:3001/api/user/stats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: userData.email,
+                            stats: newStats
+                        })
+                    }).catch(err => console.error("XP Sync failed", err));
                 }
             }
         }
@@ -365,21 +439,95 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         }
     };
 
-    const handleModuleSelect = (module: Topic) => {
+    const handleModuleSelect = (module: Topic | string) => {
+        const moduleTitle = typeof module === 'string' ? module : module.title;
         setTopicModules(null);
         setSelectedTopic(null);
         setShowMap(false);
-        setCurrentModule(module.title);
-        handleSendMessage(`Teach me about ${module.title}. Explain it in detail.`, false);
+
+        // INTERCEPT: Open Persona Selector
+        setTargetModule(moduleTitle);
+        setShowPersonaSelector(true);
+    };
+
+    const handlePersonaConfirm = (persona: typeof PERSONAS[0]) => {
+        setSelectedPersona(persona);
+        setShowPersonaSelector(false);
+        setCurrentModule(targetModule);
+
+        // Trigger the lesson with persona context
+        const prompt = `Teach me about ${targetModule}. Explain it in detail.
+        
+        IMPORTANT: Act as ${persona.name} (${persona.role}).
+        Style Guide: ${persona.prompt}`;
+
+        handleSendMessage(prompt, false);
     };
 
 
     // --- 3. INITIAL FLOWCHART RENDERER (The "No Blank Screen" Fix) ---
     // Memoize this data to prevent Diagram re-renders loops
     const initialDiagramData = useMemo(() => {
-        const subject = userData?.subjects?.[0] || userData?.subjects || "Computer Science";
-        const vectors = userData?.secondaryGoals || ["Algorithms", "System Design", "AI Fundamentals", "Ethics"];
+        // Prioritize actual DB onboarding data
+        const subject = userData?.onboarding?.subjects?.[0] || userData?.subjects?.[0] || "Learning Path";
 
+        // Check for new Roadmap structure
+        const roadmapData = userData?.onboarding?.roadmap || userData?.roadmap;
+
+        if (roadmapData && Array.isArray(roadmapData)) {
+            const nodes: any[] = [];
+            const edges: any[] = [];
+
+            // 1. Root Node
+            nodes.push({ id: 'root', label: subject, type: 'custom', data: { type: 'main' } });
+
+            roadmapData.forEach((phase: any, phaseIdx: number) => {
+                const phaseId = `phase-${phaseIdx}`;
+
+                // 2. Phase Nodes (Branches from Root)
+                nodes.push({
+                    id: phaseId,
+                    label: phase.title,
+                    type: 'custom',
+                    data: { type: 'phase' }
+                });
+
+                edges.push({
+                    id: `edge-root-${phaseId}`,
+                    source: 'root',
+                    target: phaseId,
+                    animated: true,
+                    style: { stroke: '#ffffff', strokeWidth: 2 }
+                });
+
+                // 3. Topic Nodes (Branches from Phase)
+                if (phase.topics) {
+                    phase.topics.forEach((topic: string, topicIdx: number) => {
+                        const topicId = `topic-${phaseIdx}-${topicIdx}`;
+                        nodes.push({
+                            id: topicId,
+                            label: topic,
+                            type: 'custom',
+                            data: { type: 'topic' }
+                        });
+
+                        edges.push({
+                            id: `edge-${phaseId}-${topicId}`,
+                            source: phaseId,
+                            target: topicId,
+                            animated: false,
+                            type: 'smoothstep',
+                            style: { stroke: '#52525b', strokeWidth: 1.5, strokeDasharray: '5,5' }
+                        });
+                    });
+                }
+            });
+
+            return { title: `${subject} Roadmap`, nodes, edges };
+        }
+
+        // Fallback for legacy data
+        const vectors = userData?.onboarding?.secondaryGoals || userData?.secondaryGoals || ["Start"];
         return {
             title: `${subject} Mastery Path`,
             nodes: [
@@ -399,6 +547,134 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         };
     }, [userData]);
 
+
+    // --- 3. PERSONA SELECTOR OVERLAY (Replaces Standard View) ---
+    if (showPersonaSelector) {
+        console.log("RENDERING PERSONA SELECTOR");
+        return (
+            <div className="flex h-full w-full bg-black relative animate-in fade-in duration-500 overflow-hidden">
+                {/* 3D Character Column */}
+                <div className="w-1/2 h-full relative border-r border-white/10 hidden md:block">
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80 z-10 pointer-events-none" />
+                    <div className="absolute top-8 left-8 z-20">
+                        <div className="bg-black/60 backdrop-blur border border-white/20 px-4 py-2 rounded-xl text-neutral-200 text-sm font-mono flex items-center gap-2">
+                            <BrainCircuit size={14} className="animate-pulse text-indigo-400" /> Neural Link: Establishing...
+                        </div>
+                    </div>
+                    <div className="w-full h-full relative z-0 scale-125">
+                        <SplineScene scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode" className="w-full h-full" />
+                    </div>
+                </div>
+
+                {/* Selection Column */}
+                <div className="flex-1 h-full flex flex-col p-8 md:p-12 overflow-y-auto bg-neutral-950/80 backdrop-blur-xl">
+                    <div className="max-w-xl mx-auto w-full space-y-8">
+                        <div>
+                            <button
+                                onClick={() => {
+                                    if (showCustomInput) setShowCustomInput(false);
+                                    else setShowPersonaSelector(false);
+                                }}
+                                className="text-neutral-500 hover:text-white mb-6 flex items-center gap-2 transition-colors"
+                            >
+                                <ChevronLeft size={16} /> {showCustomInput ? "Back to Selection" : "Cancel"}
+                            </button>
+
+                            <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">
+                                {showCustomInput ? "Design Your Instructor" : "Identify Instructor"}
+                            </h2>
+                            <p className="text-neutral-400 text-lg">
+                                {showCustomInput
+                                    ? "Describe exactly how the AI should behave."
+                                    : <span>Who should teach you <span className="text-white font-bold">{targetModule}</span>?</span>
+                                }
+                            </p>
+                        </div>
+
+                        {showCustomInput ? (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                                <textarea
+                                    value={customPrompt}
+                                    onChange={(e) => setCustomPrompt(e.target.value)}
+                                    placeholder="e.g. You are a chill surfer dude who explains things using ocean analogies. Be super relaxed, use slang like 'gnarly' and 'totally', but keep the facts accurate."
+                                    className="w-full h-48 bg-neutral-900/50 border border-white/10 rounded-2xl p-6 text-white text-lg focus:outline-none focus:border-white/30 transition-all resize-none"
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={() => {
+                                        if (!customPrompt.trim()) return;
+
+                                        setShowPersonaSelector(false);
+                                        setShowCustomInput(false);
+                                        setCurrentModule(targetModule);
+
+                                        const prompt = `Teach me about ${targetModule}. Explain it in detail.
+                                        
+                                        IMPORTANT: Act as a custom persona defined as follows:
+                                        "${customPrompt}"
+                                        
+                                        Maintain this persona strictly throughout the explanation.`;
+
+                                        handleSendMessage(prompt, false);
+                                    }}
+                                    disabled={!customPrompt.trim()}
+                                    className="w-full py-4 rounded-xl bg-white text-black font-bold text-lg hover:bg-neutral-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    <Sparkles size={20} /> Initialize Custom Persona
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 gap-4">
+                                {PERSONAS.map((p) => (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => handlePersonaConfirm(p)}
+                                        className="group relative flex items-center gap-4 p-4 rounded-2xl bg-neutral-900/50 border border-white/5 hover:bg-neutral-900 hover:border-white/20 transition-all duration-300 hover:scale-[1.02] text-left overflow-hidden"
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                                        <div className="w-16 h-16 rounded-xl bg-neutral-800 overflow-hidden flex-shrink-0 border border-white/10 group-hover:border-white/40 transition-colors relative z-10">
+                                            <img src={p.img} alt={p.name} className="w-full h-full object-cover filter grayscale group-hover:grayscale-0 transition-all duration-500" />
+                                        </div>
+
+                                        <div className="flex-1 relative z-10">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <h3 className="font-bold text-white text-lg group-hover:text-indigo-300 transition-colors">{p.name}</h3>
+                                                <ArrowRight size={16} className="text-neutral-600 group-hover:text-white transform -translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all" />
+                                            </div>
+                                            <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-1">{p.role}</div>
+                                            <p className="text-sm text-neutral-400 line-clamp-2 group-hover:text-neutral-300 transition-colors">{p.prompt}</p>
+                                        </div>
+                                    </button>
+                                ))}
+
+                                {/* Custom Persona Button */}
+                                <button
+                                    onClick={() => setShowCustomInput(true)}
+                                    className="group relative flex items-center gap-4 p-4 rounded-2xl bg-indigo-900/20 border border-indigo-500/20 hover:bg-indigo-900/40 hover:border-indigo-500/50 transition-all duration-300 hover:scale-[1.02] text-left overflow-hidden"
+                                >
+                                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                                    <div className="w-16 h-16 rounded-xl bg-neutral-900 overflow-hidden flex-shrink-0 border border-indigo-500/30 group-hover:border-indigo-400 transition-colors relative z-10 flex items-center justify-center">
+                                        <Sparkles size={32} className="text-indigo-400 group-hover:text-white transition-colors" />
+                                    </div>
+
+                                    <div className="flex-1 relative z-10">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <h3 className="font-bold text-white text-lg group-hover:text-indigo-300 transition-colors">Create Custom</h3>
+                                            <ArrowRight size={16} className="text-indigo-400 group-hover:text-white transform -translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all" />
+                                        </div>
+                                        <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Hyper-Personalized</div>
+                                        <p className="text-sm text-neutral-400 line-clamp-2 group-hover:text-neutral-300 transition-colors">Define your own instructor personality and teaching style.</p>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     // --- 3. FLOWCHART RENDERER ---
     if (showCertificate) {
@@ -449,6 +725,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                         <Diagram
                             data={initialDiagramData}
                             onNodeClick={(label) => {
+                                // If label matches a known phase or topic, create modules
                                 fetchModulesForTopic(label);
                             }}
                         />
@@ -517,7 +794,6 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
         );
     }
 
-    // --- 4. STANDARD CHAT UI (Only renders if messages > 0) ---
     return (
         <div className="flex flex-col h-full relative">
             {/* Top Controls */}
@@ -525,10 +801,13 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
             <div className="w-full flex justify-between items-center gap-2 p-4 border-b border-white/5 bg-black/20 backdrop-blur-sm z-20">
                 {/* Gamification Stats (Left) */}
                 <div className="flex items-center gap-3 md:gap-4 overflow-x-auto no-scrollbar">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full">
+                    <button
+                        onClick={() => setShowLeaderboard(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full hover:bg-neutral-800 transition-colors"
+                    >
                         <Trophy size={14} className="text-yellow-500" />
                         <span className="text-xs font-bold text-white whitespace-nowrap">Lvl {userStats.level} <span className="text-neutral-500 font-medium hidden sm:inline">• {getLevelTitle(userStats.level)}</span></span>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-900/80 border border-white/10 rounded-full">
                         <Flame size={14} className="text-orange-500 fill-orange-500/20" />
                         <span className="text-xs font-bold text-white whitespace-nowrap">{userStats.streak} Day{userStats.streak !== 1 && 's'}</span>
@@ -538,6 +817,14 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                         <span className="text-xs font-bold text-white whitespace-nowrap">{userStats.xp} XP</span>
                     </div>
                 </div>
+
+                {/* Council Launch Button */}
+                <button
+                    onClick={onLaunchCouncil}
+                    className="hidden md:flex items-center gap-2 px-3 py-1.5 ml-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:text-white hover:bg-indigo-500/20 rounded-full text-xs font-bold transition-all"
+                >
+                    <Gavel size={14} /> Council
+                </button>
 
                 {/* Right Controls */}
                 <div className="flex items-center gap-2">
@@ -577,6 +864,7 @@ export function ChatInterface({ userData, mode = 'learn' }: ChatInterfaceProps) 
                     currentContext={messages.map(m => m.content).join('\n')}
                 />
             )}
+            {showLeaderboard && <Leaderboard onClose={() => setShowLeaderboard(false)} />}
 
             {/* Message Stream */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-10 pb-4">

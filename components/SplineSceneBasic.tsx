@@ -6,7 +6,7 @@ import { Card } from "./ui/card"
 import { Spotlight } from "./ui/spotlight"
 import { ArrowRight, Mail, Lock, Github, ArrowLeft, Globe } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { SignIn } from '@clerk/clerk-react';
+import { SignIn, SignUp } from '@clerk/clerk-react';
 
 interface Props {
     onStart: () => void;
@@ -18,6 +18,7 @@ export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+    const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
     // Removed local useEffect to avoid conflict with App.tsx logic
 
@@ -110,24 +111,54 @@ export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
                             </button>
 
                             <div className="w-full flex justify-center">
-                                <SignIn
-                                    appearance={{
-                                        elements: {
-                                            card: "bg-neutral-900 border border-neutral-800 shadow-none w-full",
-                                            headerTitle: "text-white",
-                                            headerSubtitle: "text-neutral-400",
-                                            socialButtonsBlockButton: "text-white border-neutral-700 hover:bg-neutral-800",
-                                            dividerLine: "bg-neutral-800",
-                                            dividerText: "text-neutral-500",
-                                            formFieldLabel: "text-neutral-300",
-                                            formFieldInput: "bg-neutral-800 border-neutral-700 text-white",
-                                            footerActionLink: "text-indigo-400 hover:text-indigo-300",
-                                            formButtonPrimary: "bg-indigo-600 hover:bg-indigo-500 text-white"
-                                        }
-                                    }}
-                                    signUpUrl="#"
-                                    forceRedirectUrl="/"
-                                />
+                                {step === 'auth' && (
+                                    <div className="w-full relative">
+                                        {/* Container for smooth transition */}
+                                        <div className="transition-all duration-500 ease-in-out">
+                                            {authMode === 'signin' ? (
+                                                <div className="animate-in fade-in slide-in-from-left-4 duration-500">
+                                                    <SignIn
+                                                        appearance={{
+                                                            elements: {
+                                                                footer: "hidden",
+                                                                card: "bg-transparent shadow-none w-full",
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="mt-4 text-center text-neutral-400 text-sm">
+                                                        Don't have an account?{' '}
+                                                        <button
+                                                            onClick={() => setAuthMode('signup')}
+                                                            className="text-white hover:underline font-medium hover:text-indigo-400 transition-colors"
+                                                        >
+                                                            Sign up
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+                                                    <SignUp
+                                                        appearance={{
+                                                            elements: {
+                                                                footer: "hidden",
+                                                                card: "bg-transparent shadow-none w-full",
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="mt-4 text-center text-neutral-400 text-sm">
+                                                        Already have an account?{' '}
+                                                        <button
+                                                            onClick={() => setAuthMode('signin')}
+                                                            className="text-white hover:underline font-medium hover:text-indigo-400 transition-colors"
+                                                        >
+                                                            Sign in
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

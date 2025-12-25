@@ -99,7 +99,9 @@ app.post('/api/user/onboarding', async (req, res) => {
                         learningDepth: data.learningDepth,
                         motivation: data.motivation,
                         assessmentScore: data.assessmentScore,
-                        primaryGoal: data.primaryGoal
+                        primaryGoal: data.primaryGoal,
+                        secondaryGoals: data.secondaryGoals,
+                        roadmap: data.roadmap
                     }
                 }
             },
@@ -110,6 +112,50 @@ app.post('/api/user/onboarding', async (req, res) => {
     } catch (error) {
         console.error("Onboarding Save Error:", error);
         res.status(500).json({ error: "Failed to save onboarding data" });
+    }
+});
+
+// 1.6 Update User Stats (XP / Level)
+app.post('/api/user/stats', async (req, res) => {
+    try {
+        const { email, stats } = req.body;
+        if (!email || !stats) {
+            res.status(400).json({ error: "Email and stats required" });
+            return;
+        }
+
+        const user = await User.findOneAndUpdate(
+            { email },
+            {
+                $set: {
+                    'gamification.xp': stats.xp,
+                    'gamification.level': stats.level,
+                    'gamification.streak': stats.streak,
+                    'gamification.lastLogin': new Date()
+                }
+            },
+            { new: true }
+        );
+        res.json(user);
+    } catch (error) {
+        console.error("Stats Update Error:", error);
+        res.status(500).json({ error: "Failed to update stats" });
+    }
+});
+
+// 1.7 Fetch Leaderboard
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        // Fetch top 50 users sorted by XP desc
+        const users = await User.find({})
+            .sort({ 'gamification.xp': -1 })
+            .limit(50)
+            .select('name image gamification.xp gamification.level gamification.streak');
+
+        res.json(users);
+    } catch (error) {
+        console.error("Leaderboard Error:", error);
+        res.status(500).json({ error: "Failed to fetch leaderboard" });
     }
 });
 
