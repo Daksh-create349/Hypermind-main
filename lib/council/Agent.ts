@@ -11,8 +11,10 @@ export class Agent {
         this.config = config;
         // PRIORITY: Use valid VITE_COUNCIL_API_KEY if available, else fall back to standard key
         const councilKey = import.meta.env.VITE_COUNCIL_API_KEY;
-        // FORCE USE of Council Key if present, ignoring the passed apiKey which might be from the exhausted rotating pool
-        const key = (councilKey && councilKey.startsWith("AIza")) ? councilKey : (apiKey || import.meta.env.VITE_GEMINI_API_KEY);
+        // FORCE USE of Council Key if present. Fallback to passed apiKey, then process.env.API_KEY (universal), then legacy VITE var.
+        const key = (councilKey && councilKey.startsWith("AIza"))
+            ? councilKey
+            : (apiKey || process.env.API_KEY || process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY);
 
         if (!key) console.error("Missing Gemini API Key in Council Agent");
 

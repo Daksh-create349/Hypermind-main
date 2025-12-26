@@ -14,7 +14,6 @@ import { Certificate } from './Certificate';
 import { NotesInterface } from './NotesInterface';
 import { Leaderboard } from './Leaderboard';
 import { getGamificationStats, updateLoginStreak, addXP, getLevelTitle, UserStats } from '../lib/gamification';
-import { getRandomApiKey } from '../lib/apiKeys';
 
 // Types
 export interface Topic {
@@ -164,8 +163,8 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             }
 
             try {
-                // ROTATION LOGIC: Pick a random key from the pool for general chat
-                const apiKey = getRandomApiKey();
+                // DIRECT KEY USAGE: Use the standard Vite env var (Safe & Robust)
+                const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
                 // console.log("Initializing Chat with Key rotation...", apiKey.slice(0, 5) + "...");
 
                 const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -189,8 +188,10 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                         parts: [{ text: m.content }]
                     }));
 
+                console.log("Initializing AI with Key:", apiKey ? apiKey.slice(0, 8) + "***" : "UNDEFINED");
+
                 const chat = ai.chats.create({
-                    model: 'gemini-2.5-flash-lite',
+                    model: 'gemini-pro',
                     config: { systemInstruction },
                     history: history
                 });
@@ -319,7 +320,11 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 errorHtml = `<p class="text-red-400 font-bold">⚠️ API Quota Limit Reached</p><p class="text-neutral-500 text-sm">The AI service is temporarily unavailable due to high traffic. Please try again in a few minutes.</p>`;
             } else if (isKeyError) {
                 errorMessage = "Invalid API Key. Please check your configuration.";
-                errorHtml = `<p class="text-red-400 font-bold">🔑 Invalid API Key</p><p class="text-neutral-500 text-sm">Please check your .env file and ensure the API key is correct and has the necessary permissions. You may need to restart the server.</p>`;
+                errorHtml = `<p class="text-red-400 font-bold">🔑 Invalid API Key</p><p class="text-neutral-500 text-sm">Please check your .env file and ensure the API key is correct.</p>`;
+            } else {
+                // Fallback: Show exact error for debugging
+                errorMessage = `Connection Error: ${error.message}`;
+                errorHtml = `<p class="text-red-400 font-bold">Connection Error</p><p class="text-neutral-500 text-sm font-mono mt-1">${error.message || JSON.stringify(error)}</p>`;
             }
 
             const errorMsg: Message = {
