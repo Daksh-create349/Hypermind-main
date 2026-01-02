@@ -176,9 +176,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     };
 
     const generateAiCurriculum = async () => {
-        if (!process.env.API_KEY) return getFallbackCurriculum();
+        if (!import.meta.env.VITE_GEMINI_API_KEY) return getFallbackCurriculum();
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
         const prompt = `
             Act as an AI educational architect.
             User Profile:
@@ -203,7 +203,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
         try {
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: 'gemini-1.5-flash',
                 contents: prompt,
                 config: { responseMimeType: 'application/json' }
             });

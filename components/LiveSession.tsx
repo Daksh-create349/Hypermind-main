@@ -33,7 +33,7 @@ export function LiveSession({ onClose }: LiveSessionProps) {
 
         const startSession = async () => {
             try {
-                if (!process.env.API_KEY) throw new Error("API Key Missing");
+                if (!import.meta.env.VITE_GEMINI_API_KEY) throw new Error("API Key Missing");
 
                 // 1. Get User Media first to fail fast on permissions
                 let stream: MediaStream;
@@ -63,7 +63,7 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                     videoRef.current.play().catch(() => { /* ignore play errors */ });
                 }
 
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
                 // Audio Output Context - Handle AudioContext possibly not being available immediately
                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -90,7 +90,7 @@ export function LiveSession({ onClose }: LiveSessionProps) {
 
                 // Connect to Gemini Live
                 const sessionPromise = ai.live.connect({
-                    model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                    model: 'gemini-1.5-flash-002',
                     callbacks: {
                         onopen: () => {
                             if (!mounted) return;

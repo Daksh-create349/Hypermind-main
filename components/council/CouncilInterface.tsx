@@ -15,7 +15,7 @@ interface Props {
 }
 
 export function CouncilInterface({ topic, context, initialAgents, onClose, userProfile }: Props) {
-    const [engine] = useState(() => new CouncilEngine(process.env.API_KEY || ''));
+    const [engine] = useState(() => new CouncilEngine(import.meta.env.VITE_COUNCIL_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || ''));
     const [isDebating, setIsDebating] = useState(false);
     const [messages, setMessages] = useState<CouncilMessage[]>([]);
     const [currentSpeaker, setCurrentSpeaker] = useState<string | null>(null);

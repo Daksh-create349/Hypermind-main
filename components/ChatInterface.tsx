@@ -157,7 +157,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
 
     useEffect(() => {
         const initChat = async () => {
-            if (!process.env.API_KEY) {
+            if (!import.meta.env.VITE_GEMINI_API_KEY) {
                 console.error("API Key missing");
                 return;
             }
@@ -191,7 +191,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 console.log("Initializing AI with Key:", apiKey ? apiKey.slice(0, 8) + "***" : "UNDEFINED");
 
                 const chat = ai.chats.create({
-                    model: 'gemini-pro',
+                    model: 'gemini-1.5-flash',
                     config: { systemInstruction },
                     history: history
                 });

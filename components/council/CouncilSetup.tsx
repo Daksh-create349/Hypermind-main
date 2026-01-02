@@ -57,11 +57,11 @@ export function CouncilSetup({ onStart, onCancel, userProfile }: Props) {
     const handleStart = () => {
         const config: AgentConfig[] = [
             // Moderator (Judge)
-            createConfig('moderator', seats['moderator'], 'gemini-2.5-pro'),
+            createConfig('moderator', seats['moderator'], 'gemini-1.5-pro'),
             // Skeptic (Defendant - Against)
-            createConfig('skeptic', seats['skeptic'], 'gemini-2.5-flash-preview-09-2025'),
+            createConfig('skeptic', seats['skeptic'], 'gemini-1.5-flash'),
             // Visionary (Plaintiff - For)
-            createConfig('visionary', seats['visionary'], 'gemini-2.5-flash-preview-09-2025')
+            createConfig('visionary', seats['visionary'], 'gemini-1.5-flash')
         ];
         onStart(config, topic, context);
     };
