@@ -22,6 +22,7 @@ app.use(express.json());
 import User from '../lib/models/User';
 import Chat from '../lib/models/Chat';
 import Note from '../lib/models/Note';
+import CouncilSession from '../lib/models/CouncilSession';
 
 // Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -36,6 +37,11 @@ mongoose.connect(MONGODB_URI)
     .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
 // Routes
+
+// Root Route to ensure server status is visible in browser
+app.get('/', (req, res) => {
+    res.send('HyperMind Backend Server is running! This server only responds to /api requests. Please open your frontend URL (typically localhost:3000 or localhost:5173) to view the application.');
+});
 
 // 1. Sync User (Called after Clerk Login)
 app.post('/api/user/sync', async (req, res) => {
@@ -101,7 +107,8 @@ app.post('/api/user/onboarding', async (req, res) => {
                         assessmentScore: data.assessmentScore,
                         primaryGoal: data.primaryGoal,
                         secondaryGoals: data.secondaryGoals,
-                        roadmap: data.roadmap
+                        roadmap: data.roadmap,
+                        preferredLanguage: data.preferredLanguage || data.language
                     }
                 }
             },
@@ -143,7 +150,60 @@ app.post('/api/user/stats', async (req, res) => {
     }
 });
 
-// 1.7 Fetch Leaderboard
+// 1.6.5 Reset User Progress
+app.post('/api/user/reset', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: "Email required" });
+
+        const user = await User.findOneAndUpdate(
+            { email },
+            {
+                $set: {
+                    'progress.completedModules': [],
+                    'progress.currentModule': null,
+                    'progress.activeChatId': null,
+                    'progress.topicModules': {},
+                    'onboarding': null
+                }
+            },
+            { new: true }
+        );
+        res.json(user);
+    } catch (error) {
+        console.error("Reset Error:", error);
+        res.status(500).json({ error: "Failed to reset data" });
+    }
+});
+
+// 1.7 Update User Progress (Modules & Active Chat)
+app.post('/api/user/progress', async (req, res) => {
+    try {
+        const { email, progress } = req.body;
+        if (!email || !progress) return res.status(400).json({ error: "Email and progress required" });
+
+        const user = await User.findOneAndUpdate(
+            { email },
+            {
+                $set: {
+                    'progress.completedModules': progress.completedModules || [],
+                    'progress.currentModule': progress.currentModule || null,
+                    'progress.activeChatId': progress.activeChatId || null,
+                    'progress.topicModules': progress.topicModules || {},
+                    'progress.lastActiveSubject': progress.lastActiveSubject || null,
+                    'progress.totalSessions': progress.totalSessions || 0
+                }
+            },
+            { new: true }
+        );
+        res.json(user);
+    } catch (error) {
+        console.error("Progress Update Error:", error);
+        res.status(500).json({ error: "Failed to update progress" });
+    }
+});
+
+// 1.8 Fetch Leaderboard
 app.get('/api/leaderboard', async (req, res) => {
     try {
         // Fetch top 50 users sorted by XP desc
@@ -162,7 +222,7 @@ app.get('/api/leaderboard', async (req, res) => {
 // 2. Chat Routes
 app.post('/api/chat', async (req, res) => {
     try {
-        const { email, title, messages } = req.body;
+        const { email, title, messages, chatId } = req.body;
         const user = await User.findOne({ email });
 
         if (!user) {
@@ -170,11 +230,22 @@ app.post('/api/chat', async (req, res) => {
             return;
         }
 
-        const chat = await Chat.create({
-            userId: user._id,
-            title: title || `Chat ${new Date().toLocaleDateString()}`,
-            messages
-        });
+        let chat;
+        if (chatId) {
+            chat = await Chat.findByIdAndUpdate(
+                chatId,
+                { title, messages, updatedAt: new Date() },
+                { new: true }
+            );
+        }
+
+        if (!chat) {
+            chat = await Chat.create({
+                userId: user._id,
+                title: title || `Chat ${new Date().toLocaleDateString()}`,
+                messages
+            });
+        }
 
         res.json(chat);
     } catch (error) {
@@ -249,6 +320,55 @@ app.post('/api/notes', async (req, res) => {
     } catch (error) {
         console.error("Save Note Error:", error);
         res.status(500).json({ error: "Failed to save note" });
+    }
+});
+
+// 4. Council Routes
+app.post('/api/council', async (req, res) => {
+    try {
+        const { email, topic, context, agents, messages } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        const session = await CouncilSession.create({
+            userId: user._id,
+            topic: topic || "Council Session",
+            context,
+            agents,
+            messages
+        });
+
+        res.json(session);
+    } catch (error) {
+        console.error("Save Council Error:", error);
+        res.status(500).json({ error: "Failed to save council session" });
+    }
+});
+
+app.get('/api/council', async (req, res) => {
+    try {
+        const { email } = req.query;
+        if (!email) {
+            res.status(400).json({ error: "Email required" });
+            return;
+        }
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            res.json([]);
+            return;
+        }
+
+        // @ts-ignore
+        const sessions = await CouncilSession.find({ userId: user._id }).sort({ createdAt: -1 });
+        res.json(sessions);
+    } catch (error) {
+        console.error("Fetch Council Sessions Error:", error);
+        res.status(500).json({ error: "Failed to fetch council sessions" });
     }
 });
 

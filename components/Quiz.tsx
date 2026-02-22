@@ -176,42 +176,40 @@ export function Quiz({ data, onComplete }: QuizProps) {
 
             {/* Completion & Analysis Section */}
             {allAnswered && (
-                <div className="sticky bottom-4 z-10 animate-in slide-in-from-bottom-4 duration-700">
-                    <div className="bg-neutral-950/90 backdrop-blur-xl border border-white/20 rounded-2xl p-1 shadow-[0_0_40px_rgba(0,0,0,0.8)]">
-                        <div className="flex flex-col md:flex-row items-center gap-6 p-6">
-                            <div className="flex-1 text-center md:text-left">
-                                <h4 className="text-2xl font-bold text-white mb-1">Assessment Complete</h4>
-                                <p className="text-neutral-400 text-sm">
-                                    You scored <span className="text-white font-bold text-lg">{score}</span> / {totalCount}.
-                                    {isAnalyzed ? " Analysis provided below." : " Ready for AI analysis?"}
-                                </p>
-                            </div>
-
-                            {!isAnalyzed ? (
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={isSubmitting}
-                                    className="flex items-center gap-2 bg-white hover:bg-neutral-200 text-black px-8 py-3 rounded-xl font-bold shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-wait whitespace-nowrap"
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 size={18} className="animate-spin" />
-                                            Analyzing Performance...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <BarChart3 size={18} />
-                                            Get Conclusion
-                                            <ArrowRight size={18} />
-                                        </>
-                                    )}
-                                </button>
-                            ) : (
-                                <div className="px-6 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm font-bold flex items-center gap-2">
-                                    <Check size={16} /> Analysis Received
-                                </div>
-                            )}
+                <div className="mt-8 z-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="bg-neutral-950/90 border border-indigo-500/30 rounded-2xl p-6 shadow-[0_0_40px_rgba(79,70,229,0.15)] text-center flex flex-col items-center justify-center gap-4">
+                        <div>
+                            <h4 className="text-2xl font-bold text-white mb-1">Assessment Complete</h4>
+                            <p className="text-neutral-400 text-sm">
+                                You scored <span className="text-white font-bold text-lg">{score}</span> / {totalCount}.
+                                {isAnalyzed ? " Analysis provided below." : " Ready for AI analysis?"}
+                            </p>
                         </div>
+
+                        {!isAnalyzed ? (
+                            <button
+                                onClick={handleSubmit}
+                                disabled={isSubmitting}
+                                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-neutral-200 text-black px-8 py-3 rounded-xl font-bold shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-wait"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 size={18} className="animate-spin" />
+                                        Analyzing Performance...
+                                    </>
+                                ) : (
+                                    <>
+                                        <BarChart3 size={18} />
+                                        Get Conclusion
+                                        <ArrowRight size={18} />
+                                    </>
+                                )}
+                            </button>
+                        ) : (
+                            <div className="px-6 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm font-bold flex items-center justify-center gap-2">
+                                <Check size={16} /> Analysis Received
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

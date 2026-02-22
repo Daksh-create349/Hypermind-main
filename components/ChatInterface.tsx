@@ -2,8 +2,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { SplineScene } from './ui/spline';
 import { UserButton } from '@clerk/clerk-react';
-import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, ChevronLeft, PlayCircle, Flame, Trophy, Gem, FileText, Sparkles, Gavel, Minus } from 'lucide-react';
-import { GoogleGenAI, Chat } from "@google/genai";
+import { Send, Paperclip, Loader2, BrainCircuit, Phone, Award, CheckCircle2, AlertCircle, ArrowRight, RotateCcw, X, BookOpen, ChevronRight, ChevronLeft, PlayCircle, Flame, Trophy, Gem, FileText, Sparkles, Gavel, Minus, History } from 'lucide-react';
+import { GoogleGenAIOpenRouter as GoogleGenAI, Chat } from "../lib/openrouter";
 import { cn, blobToBase64, extractTextFromPdf, parseJsonFromText } from '../lib/utils';
 import { marked } from 'marked';
 import { Diagram } from './Diagram';
@@ -86,21 +86,30 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [currentMode, setCurrentMode] = useState(mode);
-    const [chatSession, setChatSession] = useState<Chat | null>(null);
+    const [chatSession, setChatSession] = useState<any | null>(null);
     const [sessionId, setSessionId] = useState<string>('default');
 
     const [attachedImages, setAttachedImages] = useState<{ data: string, mime: string }[]>([]);
     const [isProcessingFile, setIsProcessingFile] = useState(false);
     const [isLiveOpen, setIsLiveOpen] = useState(false);
-    const [showMap, setShowMap] = useState(false);
+    const [showMap, setShowMap] = useState(true);
     const [showNotes, setShowNotes] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [pastChats, setPastChats] = useState<any[]>([]);
 
     // Learning Path State
+    // Learning Path State
     const [completedModules, setCompletedModules] = useState<string[]>(() => {
-        const saved = localStorage.getItem('hypermind_progress');
-        return saved ? JSON.parse(saved) : [];
+        try {
+            const saved = localStorage.getItem('hypermind_progress');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) { }
+        return userData?.progress?.completedModules || [];
     });
-    const [currentModule, setCurrentModule] = useState<string | null>(null);
+    const [currentModule, setCurrentModule] = useState<string | null>(userData?.progress?.currentModule || null);
     const [showCertificate, setShowCertificate] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
     const [certificateName, setCertificateName] = useState(userData?.name || "Student");
@@ -110,6 +119,9 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
     const [topicModules, setTopicModules] = useState<Topic[] | null>(null);
     const [isLoadingModules, setIsLoadingModules] = useState(false);
+    const [topicModulesMap, setTopicModulesMap] = useState<Record<string, Topic[]>>(() => {
+        return userData?.progress?.topicModules || {};
+    });
 
     // Persona State
     const [showPersonaSelector, setShowPersonaSelector] = useState(false);
@@ -117,6 +129,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     const [selectedPersona, setSelectedPersona] = useState<typeof PERSONAS[0] | null>(null);
     const [showCustomInput, setShowCustomInput] = useState(false);
     const [customPrompt, setCustomPrompt] = useState("");
+    const [autoLoadedSubject, setAutoLoadedSubject] = useState<string | null>(null);
 
     // Gamification State
     const [userStats, setUserStats] = useState<UserStats>(() => updateLoginStreak());
@@ -126,6 +139,25 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
         window.addEventListener('gamification_update', handleStatsUpdate);
         return () => window.removeEventListener('gamification_update', handleStatsUpdate);
     }, []);
+
+    // Sync state with props when userData arrives or changes
+    useEffect(() => {
+        if (userData?.progress) {
+            if (userData.progress.completedModules && completedModules.length === 0) {
+                setCompletedModules(userData.progress.completedModules);
+            }
+            if (userData.progress.currentModule && !currentModule) {
+                setCurrentModule(userData.progress.currentModule);
+            }
+            if (userData.progress.topicModules) {
+                setTopicModulesMap(prev => ({ ...prev, ...userData.progress.topicModules }));
+            }
+            // If we have a last active subject and no selected one yet, use it
+            if (userData.progress.lastActiveSubject && !selectedTopic && !topicModules) {
+                // This will trigger the auto-load effect if chatSession is ready
+            }
+        }
+    }, [userData]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +188,52 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     }, [completedModules]);
 
     useEffect(() => {
+        if (userData?.email) {
+            fetch(`/api/chat?email=${userData.email}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        setPastChats(data);
+                        // Auto-resume active chat on first load if nothing is loaded
+                        if (messages.length === 0 && userData?.progress?.activeChatId) {
+                            const activeChat = data.find(c => c._id === userData.progress.activeChatId);
+                            if (activeChat && activeChat.messages) {
+                                setMessages(activeChat.messages);
+                                setSessionId(activeChat._id); // Triggers initChat to build AI context for this ID
+                            }
+                        }
+                    }
+                })
+                .catch(err => console.error("Failed to fetch history", err));
+        }
+    }, [userData?.email, showHistory]);
+
+    // Background sync of progress
+    useEffect(() => {
+        // CRITICAL: Preserve existing curricula by only syncing if we have data 
+        // OR if the userData has already been loaded from the DB.
+        const hasLocalData = Object.keys(topicModulesMap).length > 0;
+        const isUserDataLoaded = !!userData?.progress;
+
+        if (userData?.email && (hasLocalData || isUserDataLoaded)) {
+            fetch('/api/user/progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: userData.email,
+                    progress: {
+                        completedModules,
+                        currentModule,
+                        topicModules: topicModulesMap,
+                        activeChatId: sessionId.startsWith('default') ? null : sessionId,
+                        lastActiveSubject: selectedTopic || userData?.selectedSubject || userData?.progress?.lastActiveSubject
+                    }
+                })
+            }).catch(e => console.error("Failed to sync progress", e));
+        }
+    }, [completedModules, currentModule, sessionId, topicModulesMap, userData?.email]);
+
+    useEffect(() => {
         const initChat = async () => {
             if (!import.meta.env.VITE_GEMINI_API_KEY) {
                 console.error("API Key missing");
@@ -169,17 +247,17 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
 
                 const ai = new GoogleGenAI({ apiKey: apiKey });
                 const systemInstruction = `You are HyperMind, an advanced AI tutor.
+
+                RULES:
+                1. For "Teach me" requests, provide clearly formatted, easy - to - understand TEXT explanations.
+    2. JSON OUPUT(Only when requested or highly relevant):
+                - Charts: { "genUi": { "type": "line-chart", ... } }
+            - Quizzes: { "quiz": { "questions": [{ "question": "...", "options": [...], "answer": "...", "explanation": "Detailed reason why this option is correct." }] } }
+            - Diagrams: { "diagram": { "nodes": [], "edges": [] } }
+            - Curriculum: { "curriculum": [...] }(ONLY if asked for a path / syllabus)
+                - YouTube: { "youtube": [{ "title": "Video Title", "query": "Exact Search Query for YouTube" }] } (ALWAYS include 1 - 2 search queries for every teaching topic)
     
-    RULES:
-    1. For "Teach me" requests, provide clearly formatted, easy-to-understand TEXT explanations.
-    2. JSON OUPUT (Only when requested or highly relevant):
-       - Charts: { "genUi": { "type": "line-chart", ... } }
-       - Quizzes: { "quiz": { "questions": [{ "question": "...", "options": [...], "answer": "...", "explanation": "Detailed reason why this option is correct." }] } }
-       - Diagrams: { "diagram": { "nodes": [], "edges": [] } }
-       - Curriculum: { "curriculum": [...] } (ONLY if asked for a path/syllabus)
-       - YouTube: { "youtube": [{ "title": "Video Title", "query": "Exact Search Query for YouTube" }] } (ALWAYS include 1-2 search queries for every teaching topic)
-    
-    Separate JSON from text. Always prioritize helpful text explanations.`;
+    Separate JSON from text.Always prioritize helpful text explanations.`;
 
                 const history = messages
                     .filter(m => !m.isError)
@@ -196,6 +274,10 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                     history: history
                 });
 
+                if (!sessionId.startsWith('default')) {
+                    (chat as any)._id = sessionId;
+                }
+
                 setChatSession(chat);
             } catch (error) {
                 console.error("Failed to initialize AI", error);
@@ -204,6 +286,16 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
         initChat();
     }, [currentMode, sessionId]);
 
+
+    useEffect(() => {
+        const activeSubj = userData?.selectedSubject || userData?.progress?.lastActiveSubject || (userData?.onboarding?.subjects?.[0]);
+
+        if (activeSubj && chatSession && autoLoadedSubject !== activeSubj) {
+            setShowMap(true);
+            // Removed auto-fetch to show Roadmap first as requested
+            setAutoLoadedSubject(activeSubj);
+        }
+    }, [userData?.selectedSubject, userData?.progress?.lastActiveSubject, chatSession, autoLoadedSubject]);
 
     // --- 2. MESSAGE HANDLING ---
     const processResponse = (text: string): Partial<Message> => {
@@ -224,7 +316,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 if (json.curriculum) { isCurriculum = true; curriculumData = json.curriculum; }
                 if (json.youtube) { youtubeQueries = json.youtube; }
 
-                content = content.replace(JSON.stringify(rawJson), '').replace(/```json[\s\S]*?```/g, '').replace(/```[\s\S]*?```/g, '').trim();
+                content = content.replace(JSON.stringify(rawJson), '').replace(/```json[\s\S]*? ```/g, '').replace(/```[\s\S]*? ```/g, '').trim();
             }
 
             // If generic content is detected, try to strip it or leave it empty if we have rich data
@@ -257,6 +349,10 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             activeModule = modName; // Update local ref immediately
             // Append instruction to ensure text response
             if (!hidden) text = `Teach me about ${modName}. Explain it in detail with examples.`;
+        } else if (text.startsWith("Generate a 5 question quiz for ")) {
+            const modName = text.replace("Generate a 5 question quiz for ", "").split(".")[0];
+            setCurrentModule(modName);
+            activeModule = modName;
         }
 
         const userText = text.trim();
@@ -304,6 +400,48 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 }, 800);
             }
 
+            // Sync Chat immediately after AI response
+            if (userData?.email) {
+                try {
+                    // Send entire conversation state up to DB
+                    // Note: We use the *updated* set of messages since setMessages runs async
+                    const currentChatState = [...messages, (hidden ? null : {
+                        id: Date.now(),
+                        role: 'user',
+                        content: userText,
+                        images: attachedImages.map(img => img.data),
+                        timestamp: new Date().toLocaleTimeString()
+                    }), aiMsg].filter(Boolean);
+
+                    let generatedTitle = `Chat with HyperMind - ${new Date().toLocaleDateString()}`;
+                    if (chatSession?.title && !chatSession.title.startsWith('Chat with HyperMind')) {
+                        generatedTitle = chatSession.title;
+                    } else if (activeModule) {
+                        generatedTitle = activeModule;
+                    } else if (userText) {
+                        const cleanText = userText.replace(/teach me about/i, '').trim();
+                        generatedTitle = cleanText.split(' ').slice(0, 4).join(' ') + (cleanText.split(' ').length > 4 ? '...' : '');
+                    }
+
+                    const res = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: userData.email,
+                            title: generatedTitle,
+                            messages: currentChatState,
+                            chatId: sessionId.startsWith('default') ? undefined : sessionId
+                        })
+                    });
+                    const data = await res.json();
+                    if (data && data._id && sessionId.startsWith('default')) {
+                        setSessionId(data._id);
+                    }
+                } catch (e) {
+                    console.error("Failed to sync chat to DB", e);
+                }
+            }
+
         } catch (error: any) {
             console.error("AI Error:", error);
 
@@ -313,25 +451,25 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             const isKeyError = error.message?.includes('400') || error.status === 400 || error.message?.includes('403') || error.status === 403 || error.message?.includes('API key');
 
             let errorMessage = "I encountered a connection error. Please try again.";
-            let errorHtml = `<p class="text-neutral-400 font-bold">Connection Error</p>`;
+            let errorHtml = `< p class="text-neutral-400 font-bold" > Connection Error</p > `;
 
             if (isQuota) {
                 errorMessage = "API Quota Exceeded. Please try again later.";
-                errorHtml = `<p class="text-red-400 font-bold">⚠️ API Quota Limit Reached</p><p class="text-neutral-500 text-sm">The AI service is temporarily unavailable due to high traffic. Please try again in a few minutes.</p>`;
+                errorHtml = `< p class="text-red-400 font-bold" >⚠️ API Quota Limit Reached</p > <p class="text-neutral-500 text-sm">The AI service is temporarily unavailable due to high traffic. Please try again in a few minutes.</p>`;
             } else if (isKeyError) {
                 errorMessage = "Invalid API Key. Please check your configuration.";
-                errorHtml = `<p class="text-red-400 font-bold">🔑 Invalid API Key</p><p class="text-neutral-500 text-sm">Please check your .env file and ensure the API key is correct.</p>`;
+                errorHtml = `< p class="text-red-400 font-bold" >🔑 Invalid API Key</p > <p class="text-neutral-500 text-sm">Please check your .env file and ensure the API key is correct.</p>`;
             } else {
                 // Fallback: Show exact error for debugging
-                errorMessage = `Connection Error: ${error.message}`;
-                errorHtml = `<p class="text-red-400 font-bold">Connection Error</p><p class="text-neutral-500 text-sm font-mono mt-1">${error.message || JSON.stringify(error)}</p>`;
+                errorMessage = `Connection Error: ${error.message} `;
+                errorHtml = `< p class="text-red-400 font-bold" > Connection Error</p > <p class="text-neutral-500 text-sm font-mono mt-1">${error.message || JSON.stringify(error)}</p>`;
             }
 
             const errorMsg: Message = {
                 id: Date.now() + 1,
                 role: 'ai',
                 content: errorMessage,
-                htmlContent: errorHtml + `<div class="mt-2"><button onclick="window.location.reload()" class="bg-red-500/10 text-red-400 px-3 py-1 rounded text-xs hover:bg-red-500/20 transition-colors">↻ Switch API Key & Retry</button></div>`,
+                htmlContent: errorHtml + `< div class="mt-2" > <button onclick="window.location.reload()" class="bg-red-500/10 text-red-400 px-3 py-1 rounded text-xs hover:bg-red-500/20 transition-colors">↻ Switch API Key & Retry</button></div > `,
                 isError: true,
                 timestamp: new Date().toLocaleTimeString()
             };
@@ -392,6 +530,12 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                     }).catch(err => console.error("XP Sync failed", err));
                 }
             }
+
+            // Return to selecting modules after observing the passing result
+            setTimeout(() => {
+                setCurrentModule(null);
+                setShowMap(true);
+            }, 4000);
         }
     };
 
@@ -420,24 +564,44 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
         setIsLoadingModules(true);
         setTopicModules(null);
 
+        // PERSISTENCE CHECK: Prioritize existing modules from state or props
+        const existingModules = topicModulesMap[topic] || userData?.progress?.topicModules?.[topic];
+
+        if (existingModules && existingModules.length > 0) {
+            setTopicModules(existingModules);
+            setIsLoadingModules(false);
+
+            // Sync to local map if it was only in props
+            if (!topicModulesMap[topic]) {
+                setTopicModulesMap(prev => ({ ...prev, [topic]: existingModules }));
+            }
+            return;
+        }
+
         try {
-            const prompt = `Break down the topic "${topic}" into 4-6 key learning modules/sub-topics. 
-            Return strictly a JSON object with this structure: 
-            { "curriculum": [{ "id": "1", "title": "Module Title", "description": "Brief description" }] }`;
+            const prompt = `Break down the topic "${topic}" into 4 - 6 key learning modules / sub - topics. 
+            Return strictly a JSON object with this structure:
+    { "curriculum": [{ "id": "1", "title": "Module Title", "description": "Brief description" }] } `;
 
             const result = await chatSession.sendMessage({ message: prompt });
             const processed = processResponse(result.text);
 
             if (processed.curriculumData && processed.curriculumData.length > 0) {
-                setTopicModules(processed.curriculumData);
+                const modules = processed.curriculumData as Topic[];
+                setTopicModules(modules);
+                // Save to local map for persistence
+                setTopicModulesMap(prev => ({
+                    ...prev,
+                    [topic]: modules
+                }));
             } else {
                 // Fallback if structured data fails
-                handleSendMessage(`Teach me about ${topic}`, false);
+                handleSendMessage(`Teach me about ${topic} `, false);
                 setSelectedTopic(null); // Cancel module flow
             }
         } catch (e) {
             console.error("Module generation failed", e);
-            handleSendMessage(`Teach me about ${topic}`, false);
+            handleSendMessage(`Teach me about ${topic} `, false);
             setSelectedTopic(null);
         } finally {
             setIsLoadingModules(false);
@@ -462,9 +626,9 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
 
         // Trigger the lesson with persona context
         const prompt = `Teach me about ${targetModule}. Explain it in detail.
-        
+
         IMPORTANT: Act as ${persona.name} (${persona.role}).
-        Style Guide: ${persona.prompt}`;
+        Style Guide: ${persona.prompt} `;
 
         handleSendMessage(prompt, false);
     };
@@ -473,8 +637,8 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     // --- 3. INITIAL FLOWCHART RENDERER (The "No Blank Screen" Fix) ---
     // Memoize this data to prevent Diagram re-renders loops
     const initialDiagramData = useMemo(() => {
-        // Prioritize actual DB onboarding data
-        const subject = userData?.onboarding?.subjects?.[0] || userData?.subjects?.[0] || "Learning Path";
+        // Prioritize actually selected subject if coming from Continue flow
+        const subject = userData?.selectedSubject || userData?.onboarding?.subjects?.[0] || userData?.subjects?.[0] || "Learning Path";
 
         // Check for new Roadmap structure
         const roadmapData = userData?.onboarding?.roadmap || userData?.roadmap;
@@ -487,7 +651,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             nodes.push({ id: 'root', label: subject, type: 'custom', data: { type: 'main' } });
 
             roadmapData.forEach((phase: any, phaseIdx: number) => {
-                const phaseId = `phase-${phaseIdx}`;
+                const phaseId = `phase - ${phaseIdx} `;
 
                 // 2. Phase Nodes (Branches from Root)
                 nodes.push({
@@ -498,7 +662,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 });
 
                 edges.push({
-                    id: `edge-root-${phaseId}`,
+                    id: `edge - root - ${phaseId} `,
                     source: 'root',
                     target: phaseId,
                     animated: true,
@@ -508,7 +672,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 // 3. Topic Nodes (Branches from Phase)
                 if (phase.topics) {
                     phase.topics.forEach((topic: string, topicIdx: number) => {
-                        const topicId = `topic-${phaseIdx}-${topicIdx}`;
+                        const topicId = `topic - ${phaseIdx} -${topicIdx} `;
                         nodes.push({
                             id: topicId,
                             label: topic,
@@ -517,7 +681,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                         });
 
                         edges.push({
-                            id: `edge-${phaseId}-${topicId}`,
+                            id: `edge - ${phaseId} -${topicId} `,
                             source: phaseId,
                             target: topicId,
                             animated: false,
@@ -538,15 +702,15 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             nodes: [
                 { id: "root", label: subject, type: "custom" },
                 ...vectors.map((vec: string, i: number) => ({
-                    id: `node-${i}`,
+                    id: `node - ${i} `,
                     label: vec,
                     type: "custom"
                 }))
             ],
             edges: vectors.map((_: string, i: number) => ({
-                id: `edge-${i}`,
+                id: `edge - ${i} `,
                 source: "root",
-                target: `node-${i}`,
+                target: `node - ${i} `,
                 animated: true
             }))
         };
@@ -614,9 +778,9 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                                         setCurrentModule(targetModule);
 
                                         const prompt = `Teach me about ${targetModule}. Explain it in detail.
-                                        
-                                        IMPORTANT: Act as a custom persona defined as follows:
-                                        "${customPrompt}"
+
+        IMPORTANT: Act as a custom persona defined as follows:
+    "${customPrompt}"
                                         
                                         Maintain this persona strictly throughout the explanation.`;
 
@@ -771,24 +935,35 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                                     </div>
 
                                     <div className="p-6 overflow-y-auto space-y-3">
-                                        {topicModules?.map((mod, idx) => (
-                                            <button
-                                                key={idx}
-                                                onClick={() => handleModuleSelect(mod)}
-                                                className="w-full text-left bg-neutral-950 hover:bg-neutral-800 border border-white/5 hover:border-white/20 p-5 rounded-xl transition-all group flex items-start gap-4"
-                                            >
-                                                <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center flex-shrink-0 group-hover:bg-white group-hover:text-black transition-colors">
-                                                    <span className="font-bold text-sm">{idx + 1}</span>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <h3 className="font-bold text-white group-hover:text-indigo-300 transition-colors mb-1 flex items-center gap-2">
-                                                        {mod.title}
-                                                        <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />
-                                                    </h3>
-                                                    <p className="text-sm text-neutral-400 line-clamp-2">{mod.description}</p>
-                                                </div>
-                                            </button>
-                                        ))}
+                                        {topicModules?.map((mod, idx) => {
+                                            const isCompleted = completedModules.includes(mod.title);
+                                            const isCurrent = currentModule === mod.title;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => handleModuleSelect(mod)}
+                                                    className={`w-full text-left bg-neutral-950 hover:bg-neutral-800 border ${isCompleted ? 'border-green-500/50' : isCurrent ? 'border-yellow-500/50' : 'border-white/5'} hover:border-white/20 p-5 rounded-xl transition-all group flex items-start gap-4`}
+                                                >
+                                                    <div className={`w-10 h-10 rounded-lg ${isCompleted ? 'bg-green-500/20 text-green-400' : isCurrent ? 'bg-yellow-500/20 text-yellow-400' : 'bg-neutral-900 text-white'} flex items-center justify-center flex-shrink-0 group-hover:bg-opacity-80 transition-colors`}>
+                                                        <span className="font-bold text-sm">{isCompleted ? <CheckCircle2 size={18} /> : idx + 1}</span>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <h3 className="font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                                                                {mod.title}
+                                                                <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />
+                                                            </h3>
+                                                            {isCompleted ? (
+                                                                <span className="text-xs font-bold bg-green-500/20 text-green-400 px-2 py-1 rounded-full border border-green-500/30">Completed</span>
+                                                            ) : (
+                                                                <span className="text-xs font-bold bg-neutral-900 text-neutral-400 px-2 py-1 rounded-full border border-white/10">Incomplete</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-neutral-400 line-clamp-2">{mod.description}</p>
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
                                     </div>
                                 </>
                             )}
@@ -845,6 +1020,14 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                     </button>
 
                     <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
+                        title="Chat History"
+                    >
+                        <History size={16} />
+                    </button>
+
+                    <button
                         onClick={() => setShowNotes(true)}
                         className="bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white p-2 rounded-full border border-white/10 transition-all"
                         title="Smart Notes"
@@ -869,20 +1052,61 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                     currentContext={messages.map(m => m.content).join('\n')}
                 />
             )}
+            {showHistory && (
+                <div className="absolute right-0 top-[72px] bottom-0 w-80 bg-neutral-950 border-l border-white/10 z-40 p-4 overflow-y-auto animate-in fade-in slide-in-from-right-8 fade-in-0 duration-300 shadow-2xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-white flex items-center gap-2"><History size={16} /> Chat History</h3>
+                        <div className="flex gap-4 items-center">
+                            <button onClick={() => {
+                                setMessages([]);
+                                setSessionId('default-' + Date.now()); // trigger new session
+                                setShowHistory(false);
+                            }} className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-full transition-colors font-medium">
+                                + New
+                            </button>
+                            <button onClick={() => setShowHistory(false)} className="text-neutral-400 hover:text-white"><X size={16} /></button>
+                        </div>
+                    </div>
+                    {pastChats.length === 0 ? (
+                        <p className="text-neutral-500 text-sm">No past conversations found.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {pastChats.map((chat, idx) => (
+                                <button key={idx} onClick={() => {
+                                    setMessages(chat.messages || []);
+                                    setSessionId(chat._id); // Set session ID the backend uses
+                                    // Sync the new active chat back
+                                    if (userData?.email) {
+                                        fetch('/api/user/progress', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ email: userData.email, progress: { completedModules, currentModule, activeChatId: chat._id } })
+                                        }).catch(() => { });
+                                    }
+                                    setShowHistory(false);
+                                }} className="w-full text-left bg-neutral-900 hover:bg-neutral-800 p-3 rounded-lg border border-white/5 transition-colors group">
+                                    <h4 className="text-sm font-semibold text-white group-hover:text-indigo-300 truncate">{chat.title}</h4>
+                                    <p className="text-xs text-neutral-500 mt-1">{new Date(chat.createdAt).toLocaleDateString()}</p>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
             {showLeaderboard && <Leaderboard onClose={() => setShowLeaderboard(false)} />}
 
             {/* Message Stream */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-10 pb-4">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-10 pb-4 overflow-x-hidden">
                 {messages.map((msg) => (
-                    <div key={msg.id} className={cn("flex gap-4", msg.role === 'user' ? "flex-row-reverse" : "")}>
+                    <div key={msg.id} className={cn("flex gap-4 w-full", msg.role === 'user' ? "flex-row-reverse" : "")}>
                         <div className={cn("w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 border border-white/10", msg.role === 'user' ? "bg-neutral-900" : "bg-neutral-950")}>
                             {msg.role === 'user' ? <span className="text-xs font-bold text-neutral-400">ME</span> : <BrainCircuit size={20} className="text-white" />}
                         </div>
-                        <div className={cn("flex flex-col gap-2 max-w-[85%]", msg.role === 'user' ? "items-end" : "w-full")}>
-                            <div className={cn("rounded-2xl px-6 py-4", msg.role === 'user' ? "bg-neutral-900 text-white border border-white/5" : "bg-transparent text-neutral-200 p-0")}>
+                        <div className={cn("flex flex-col gap-2 min-w-0 max-w-[85%]", msg.role === 'user' ? "items-end" : "items-start flex-1")}>
+                            <div className={cn("rounded-2xl px-6 py-4 w-full", msg.role === 'user' ? "bg-neutral-900 text-white border border-white/5" : "bg-transparent text-neutral-200 p-0")}>
                                 {msg.role === 'ai' ? (
                                     <>
-                                        {msg.content && <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: msg.htmlContent || '' }} />}
+                                        {msg.content && <div className="prose prose-invert prose-sm max-w-4xl" dangerouslySetInnerHTML={{ __html: msg.htmlContent || '' }} />}
 
                                         {/* --- ACTION BUTTONS (LESSON END) --- */}
                                         {msg.isAction && msg.actionType === 'lesson_options' && (
@@ -976,7 +1200,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                                                 <h3 className="font-bold text-white mb-4 flex items-center gap-2"><div className="w-1 h-4 bg-white rounded-full" /> Curriculum</h3>
                                                 <div className="space-y-3">
                                                     {msg.curriculumData.map(t => (
-                                                        <div key={t.id} onClick={() => handleSendMessage(`Teach me about ${t.title}`, false)} className="text-sm text-neutral-400 hover:text-white transition-colors cursor-pointer border-l border-white/10 pl-4 hover:border-white">
+                                                        <div key={t.id} onClick={() => handleSendMessage(`Teach me about ${t.title} `, false)} className="text-sm text-neutral-400 hover:text-white transition-colors cursor-pointer border-l border-white/10 pl-4 hover:border-white">
                                                             {t.title}
                                                         </div>
                                                     ))}
@@ -1006,30 +1230,33 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                                                             <p className="text-sm font-medium text-neutral-300 group-hover:text-white line-clamp-2 leading-snug transition-colors">
                                                                 {item.title}
                                                             </p>
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                            </div>
+                                                        </a >
+                                                    ))
+                                                    }
+                                                </div >
+                                            </div >
                                         )}
                                     </>
                                 ) : (
                                     <p>{msg.content}</p>
                                 )}
-                            </div>
-                        </div>
-                    </div>
+                            </div >
+                        </div >
+                    </div >
                 ))}
-                {isTyping && (
-                    <div className="ml-14 flex items-center gap-2 text-neutral-500 text-sm animate-pulse">
-                        <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce" />
-                        <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce delay-75" />
-                        <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce delay-150" />
-                    </div>
-                )}
-            </div>
+                {
+                    isTyping && (
+                        <div className="ml-14 flex items-center gap-2 text-neutral-500 text-sm animate-pulse">
+                            <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce" />
+                            <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce delay-75" />
+                            <div className="w-2 h-2 bg-neutral-600 rounded-full animate-bounce delay-150" />
+                        </div>
+                    )
+                }
+            </div >
 
             {/* Input Area */}
-            <div className="w-full px-4 md:px-8 pb-6 pt-4 z-20 bg-neutral-950 border-t border-white/5">
+            < div className="w-full px-4 md:px-8 pb-6 pt-4 z-20 bg-neutral-950 border-t border-white/5" >
                 <div className="relative bg-neutral-900 border border-white/10 rounded-3xl flex items-center p-2 shadow-2xl">
                     <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
                     <button onClick={() => fileInputRef.current?.click()} className="p-3 text-neutral-400 hover:text-white transition-colors"><Paperclip size={20} /></button>
@@ -1042,37 +1269,102 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                     />
                     <button onClick={() => handleSendMessage()} className="p-3 bg-white text-black rounded-full hover:bg-neutral-200 transition-colors"><Send size={18} /></button>
                 </div>
-            </div>
+            </div >
 
-            {/* Certificate Name Modal */}
-            {showNameModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
-                    <div className="bg-neutral-900 border border-white/10 p-8 rounded-3xl max-w-md w-full shadow-2xl animate-in zoom-in-95">
-                        <h3 className="text-2xl font-bold text-white mb-2">Details for Certificate</h3>
-                        <p className="text-neutral-400 mb-6 font-medium">Please enter your full name as you want it to appear on the certificate.</p>
+            {/* Module Selection Overlay (Universal) */}
+            {(topicModules || isLoadingModules) && (
+                <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-neutral-900 border border-white/10 w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl relative flex flex-col max-h-[80vh]">
 
-                        <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 block">Full Name</label>
-                        <input
-                            value={certificateName}
-                            onChange={(e) => setCertificateName(e.target.value)}
-                            placeholder="e.g. John Doe"
-                            className="w-full bg-black border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/40 transition-colors mb-6 text-lg"
-                            autoFocus
-                        />
+                        {isLoadingModules ? (
+                            <div className="p-12 flex flex-col items-center justify-center text-center">
+                                <Loader2 size={40} className="text-white animate-spin mb-4" />
+                                <h3 className="text-xl font-bold text-white mb-2">Analyzing Topic...</h3>
+                                <p className="text-neutral-400">Generating learning modules for {selectedTopic}</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 bg-neutral-900 z-10">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-white">{selectedTopic}</h2>
+                                        <p className="text-neutral-400 text-sm">Select a module to start learning</p>
+                                    </div>
+                                    <button
+                                        onClick={() => { setTopicModules(null); setSelectedTopic(null); }}
+                                        className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors"
+                                    >
+                                        <X size={24} />
+                                    </button>
+                                </div>
 
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowNameModal(false)} className="flex-1 py-3 rounded-xl bg-neutral-800 text-neutral-300 hover:bg-neutral-700 font-medium transition-colors">Cancel</button>
-                            <button
-                                onClick={() => { setShowNameModal(false); setShowCertificate(true); }}
-                                disabled={!certificateName.trim()}
-                                className="flex-1 py-3 rounded-xl bg-white text-black font-bold hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Generate Certificate
-                            </button>
-                        </div>
+                                <div className="p-6 overflow-y-auto space-y-3">
+                                    {topicModules?.map((mod, idx) => {
+                                        const isCompleted = completedModules.includes(mod.title);
+                                        const isCurrent = currentModule === mod.title;
+                                        return (
+                                            <button
+                                                key={idx}
+                                                onClick={() => handleModuleSelect(mod)}
+                                                className={`w-full text-left bg-neutral-950 hover:bg-neutral-800 border ${isCompleted ? 'border-green-500/50' : isCurrent ? 'border-yellow-500/50' : 'border-white/5'} hover:border-white/20 p-5 rounded-xl transition-all group flex items-start gap-4`}
+                                            >
+                                                <div className={`w-10 h-10 rounded-lg ${isCompleted ? 'bg-green-500/20 text-green-400' : isCurrent ? 'bg-yellow-500/20 text-yellow-400' : 'bg-neutral-900 text-white'} flex items-center justify-center flex-shrink-0 group-hover:bg-opacity-80 transition-colors`}>
+                                                    <span className="font-bold text-sm">{isCompleted ? <CheckCircle2 size={18} /> : idx + 1}</span>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <h3 className="font-bold text-white group-hover:text-indigo-300 transition-colors flex items-center gap-2">
+                                                            {mod.title}
+                                                            <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />
+                                                        </h3>
+                                                        {isCompleted ? (
+                                                            <span className="text-xs font-bold bg-green-500/20 text-green-400 px-2 py-1 rounded-full border border-green-500/30">Completed</span>
+                                                        ) : (
+                                                            <span className="text-xs font-bold bg-neutral-900 text-neutral-400 px-2 py-1 rounded-full border border-white/10">Incomplete</span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm text-neutral-400 line-clamp-2">{mod.description}</p>
+                                                </div>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* Certificate Name Modal */}
+            {
+                showNameModal && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-300">
+                        <div className="bg-neutral-900 border border-white/10 p-8 rounded-3xl max-w-md w-full shadow-2xl animate-in zoom-in-95">
+                            <h3 className="text-2xl font-bold text-white mb-2">Details for Certificate</h3>
+                            <p className="text-neutral-400 mb-6 font-medium">Please enter your full name as you want it to appear on the certificate.</p>
+
+                            <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2 block">Full Name</label>
+                            <input
+                                value={certificateName}
+                                onChange={(e) => setCertificateName(e.target.value)}
+                                placeholder="e.g. John Doe"
+                                className="w-full bg-black border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/40 transition-colors mb-6 text-lg"
+                                autoFocus
+                            />
+
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowNameModal(false)} className="flex-1 py-3 rounded-xl bg-neutral-800 text-neutral-300 hover:bg-neutral-700 font-medium transition-colors">Cancel</button>
+                                <button
+                                    onClick={() => { setShowNameModal(false); setShowCertificate(true); }}
+                                    disabled={!certificateName.trim()}
+                                    className="flex-1 py-3 rounded-xl bg-white text-black font-bold hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Generate Certificate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 }

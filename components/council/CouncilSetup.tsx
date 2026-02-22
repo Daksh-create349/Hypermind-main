@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AgentConfig, AgentRole } from '../../lib/council/types';
 import { PERSONAS, PersonaDefinition } from '../../lib/council/personas';
 import { cn, extractTextFromPdf } from '../../lib/utils';
-import { BrainCircuit, Gavel, Sparkles, User, Check, Shuffle, Paperclip, FileText, Loader2, Scale } from 'lucide-react';
+import { BrainCircuit, Gavel, Sparkles, User, Check, Shuffle, Paperclip, FileText, Loader2, Scale, History } from 'lucide-react';
 
 interface Props {
     onStart: (config: AgentConfig[], topic: string, context: string) => void;
@@ -20,6 +20,23 @@ export function CouncilSetup({ onStart, onCancel, userProfile }: Props) {
     const [context, setContext] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [showHistory, setShowHistory] = useState(false);
+    const [pastSessions, setPastSessions] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchHistory = async () => {
+            const email = userProfile?.primaryEmailAddress?.emailAddress || userProfile?.email;
+            if (email) {
+                try {
+                    const res = await fetch(`http://localhost:3001/api/council?email=${email}`);
+                    const data = await res.json();
+                    if (Array.isArray(data)) setPastSessions(data);
+                } catch (e) { }
+            }
+        };
+        fetchHistory();
+    }, [userProfile]);
 
     // Auto-staff based on user profile on mount
     useEffect(() => {
@@ -134,80 +151,106 @@ export function CouncilSetup({ onStart, onCancel, userProfile }: Props) {
                             </h2>
                             <p className="text-neutral-400 text-sm">Assemble the Plaintiff and Defendant engines.</p>
                         </div>
-                        <button onClick={randomize} className="text-indigo-400 hover:text-indigo-300 flex items-center gap-2 text-xs uppercase tracking-widest font-bold">
-                            <Shuffle size={12} /> Randomize Court
-                        </button>
+                        <div className="flex flex-col items-end gap-2">
+                            <button onClick={randomize} className="text-indigo-400 hover:text-indigo-300 flex items-center gap-2 text-xs uppercase tracking-widest font-bold">
+                                <Shuffle size={12} /> Randomize Court
+                            </button>
+                            <button onClick={() => setShowHistory(!showHistory)} className="text-neutral-400 hover:text-white flex items-center gap-2 text-xs uppercase tracking-widest font-bold">
+                                <History size={12} /> {showHistory ? "Hide History" : "View History"}
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Case Objective</label>
-                            <input
-                                value={topic}
-                                onChange={e => setTopic(e.target.value)}
-                                className="w-full bg-neutral-900 border border-white/10 rounded-sm px-4 py-2 text-white focus:border-indigo-500 focus:outline-none font-mono text-sm"
-                                placeholder="E.g. Should we adopt Rust?"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Evidence</label>
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
-                                >
-                                    {isProcessing ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
-                                    {isProcessing ? "Ingesting..." : "Attach Data"}
-                                </button>
+                    {!showHistory && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Case Objective</label>
                                 <input
-                                    type="file"
-                                    multiple
-                                    ref={fileInputRef}
-                                    className="hidden"
-                                    accept=".pdf,.txt,.md"
-                                    onChange={handleFileUpload}
+                                    value={topic}
+                                    onChange={e => setTopic(e.target.value)}
+                                    className="w-full bg-neutral-900 border border-white/10 rounded-sm px-4 py-2 text-white focus:border-indigo-500 focus:outline-none font-mono text-sm"
+                                    placeholder="E.g. Should we adopt Rust?"
                                 />
                             </div>
-                            <textarea
-                                value={context}
-                                onChange={e => setContext(e.target.value)}
-                                className="w-full bg-neutral-900 border border-white/10 rounded-sm px-4 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none min-h-[80px] font-mono"
-                                placeholder="Paste context or upload documents..."
-                            />
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Evidence</label>
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                                    >
+                                        {isProcessing ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
+                                        {isProcessing ? "Ingesting..." : "Attach Data"}
+                                    </button>
+                                    <input
+                                        type="file"
+                                        multiple
+                                        ref={fileInputRef}
+                                        className="hidden"
+                                        accept=".pdf,.txt,.md"
+                                        onChange={handleFileUpload}
+                                    />
+                                </div>
+                                <textarea
+                                    value={context}
+                                    onChange={e => setContext(e.target.value)}
+                                    className="w-full bg-neutral-900 border border-white/10 rounded-sm px-4 py-2 text-white text-sm focus:border-indigo-500 focus:outline-none min-h-[80px] font-mono"
+                                    placeholder="Paste context or upload documents..."
+                                />
+                            </div>
                         </div>
+                    )}
+                </div>
+
+                {showHistory ? (
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                        <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-widest mb-4">Past Sessions</h3>
+                        {pastSessions.length === 0 && <p className="text-neutral-500">No past council sessions found.</p>}
+                        {pastSessions.map((session, idx) => (
+                            <div key={idx} className="bg-neutral-950 border border-white/5 rounded-lg p-4 flex flex-col gap-2">
+                                <div className="text-white font-bold">{session.topic}</div>
+                                <div className="text-xs text-neutral-500">{new Date(session.createdAt).toLocaleString()}</div>
+                                <button
+                                    onClick={() => onStart(session.agents || [], session.topic, session.context)}
+                                    className="self-start mt-2 px-4 py-1 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 text-xs font-bold uppercase tracking-widest rounded-full transition-colors"
+                                >
+                                    Re-Convene
+                                </button>
+                            </div>
+                        ))}
                     </div>
-                </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
 
-                <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {/* Seat 2: The Visionary -> Plaintiff */}
+                        <SeatColumn
+                            role="visionary"
+                            title="Plaintiff (Motion For)"
+                            subtitle="Argues in favor"
+                            currentId={seats['visionary']}
+                            onSelect={(id) => handleSelect('visionary', id)}
+                        />
 
-                    {/* Seat 2: The Visionary -> Plaintiff */}
-                    <SeatColumn
-                        role="visionary"
-                        title="Plaintiff (Motion For)"
-                        subtitle="Argues in favor"
-                        currentId={seats['visionary']}
-                        onSelect={(id) => handleSelect('visionary', id)}
-                    />
+                        {/* Seat 1: The Moderator -> Judge */}
+                        <SeatColumn
+                            role="moderator"
+                            title="High Justiciar"
+                            subtitle="Neutral synthesis"
+                            currentId={seats['moderator']}
+                            onSelect={(id) => handleSelect('moderator', id)}
+                        />
 
-                    {/* Seat 1: The Moderator -> Judge */}
-                    <SeatColumn
-                        role="moderator"
-                        title="High Justiciar"
-                        subtitle="Neutral synthesis"
-                        currentId={seats['moderator']}
-                        onSelect={(id) => handleSelect('moderator', id)}
-                    />
+                        {/* Seat 3: The Skeptic -> Defendant */}
+                        <SeatColumn
+                            role="skeptic"
+                            title="Defendant (Motion Against)"
+                            subtitle="Argues against"
+                            currentId={seats['skeptic']}
+                            onSelect={(id) => handleSelect('skeptic', id)}
+                        />
 
-                    {/* Seat 3: The Skeptic -> Defendant */}
-                    <SeatColumn
-                        role="skeptic"
-                        title="Defendant (Motion Against)"
-                        subtitle="Argues against"
-                        currentId={seats['skeptic']}
-                        onSelect={(id) => handleSelect('skeptic', id)}
-                    />
-
-                </div>
+                    </div>
+                )}
 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/10 bg-neutral-950 flex justify-end gap-4">

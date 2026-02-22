@@ -25,7 +25,7 @@ import { NodeResizer } from '@reactflow/node-resizer';
 import '@reactflow/node-resizer/dist/style.css';
 import 'reactflow/dist/style.css';
 import { X, Plus, Wand2, Save, Download, Trash2, FileText } from 'lucide-react';
-import { Chat } from "@google/genai";
+import { Chat } from "../lib/openrouter";
 import { parseJsonFromText } from '../lib/utils';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';

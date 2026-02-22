@@ -15,19 +15,26 @@ export interface IUser {
         lastLogin: Date;
     };
 
-    // Learning Progress
+    // Detailed Learning Analytics & Session Tracking
     progress: {
-        completedModules: string[]; // List of module IDs or titles
-        currentModule?: string;
+        completedModules: string[]; // History of masteries
+        currentModule?: string;     // Active module ID
+        activeChatId?: string;      // Last active session link
+        topicModules?: Record<string, any[]>; // Persistent curriculum structures
+        lastActiveSubject?: string;  // Subject context for "Welcome Back"
+        totalSessions?: number;      // Frequency of use
+        xpHistory: Array<{ date: Date; amount: number; reason: string }>; // Granular XP tracking
+        engagementScore?: number;    // Calculated AI interaction metric
     };
 
     certificates: Array<{
         title: string;
         date: Date;
         url?: string;
+        grade?: string;
     }>;
 
-    // Onboarding Data
+    // Rich Onboarding Metadata
     onboarding?: {
         qualification: string;
         ageRange: string;
@@ -40,6 +47,9 @@ export interface IUser {
         primaryGoal?: string;
         secondaryGoals?: string[];
         roadmap?: Array<{ title: string; topics: string[] }>;
+        preferredLanguage?: string;
+        onboardedAt: Date;
+        lastUpdate: Date;
     };
 
     createdAt: Date;
@@ -80,12 +90,23 @@ const UserSchema = new Schema<IUser>(
         progress: {
             completedModules: { type: [String], default: [] },
             currentModule: { type: String },
+            activeChatId: { type: String },
+            topicModules: { type: Schema.Types.Mixed, default: {} },
+            lastActiveSubject: { type: String },
+            totalSessions: { type: Number, default: 0 },
+            xpHistory: [{
+                date: { type: Date, default: Date.now },
+                amount: Number,
+                reason: String
+            }],
+            engagementScore: { type: Number, default: 0 }
         },
 
         certificates: [{
             title: String,
             date: { type: Date, default: Date.now },
-            url: String
+            url: String,
+            grade: String
         }],
 
         onboarding: {
@@ -102,7 +123,10 @@ const UserSchema = new Schema<IUser>(
             roadmap: [{
                 title: String,
                 topics: [String]
-            }]
+            }],
+            preferredLanguage: String,
+            onboardedAt: { type: Date, default: Date.now },
+            lastUpdate: { type: Date, default: Date.now }
         }
     },
     { timestamps: true }

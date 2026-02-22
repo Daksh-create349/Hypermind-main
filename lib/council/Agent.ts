@@ -1,4 +1,4 @@
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAIOpenRouter as GoogleGenAI, Chat } from "../openrouter";
 import { AgentConfig, CouncilMessage } from "./types";
 
 export class Agent {

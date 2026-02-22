@@ -141,6 +141,25 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
             const report = await engine.generateVerdict();
             setReportContent(report);
             setShowReport(true);
+
+            // Save Council Session to DB
+            const userEmail = userProfile?.primaryEmailAddress?.emailAddress || userProfile?.email;
+            if (userEmail) {
+                try {
+                    await fetch('http://localhost:3001/api/council', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email: userEmail,
+                            topic: topic,
+                            context: context,
+                            agents: initialAgents,
+                            messages: engine.messages
+                        })
+                    });
+                } catch (e) { console.error("Failed to sync council session", e); }
+            }
+
         } catch (e) {
             console.error("Verdict Error:", e);
         }

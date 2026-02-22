@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SplineScene } from './ui/spline';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAIOpenRouter as GoogleGenAI } from "../lib/openrouter";
 import { Assessment } from './Assessment';
 import {
     GraduationCap,
@@ -239,8 +239,20 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         }
     };
 
-    const handleFinalStart = () => {
-        onComplete({ ...formData, ...curriculum });
+    const handleFinalStart = async () => {
+        const payload = { ...formData, ...curriculum };
+
+        // Save to MongoDB if we have email tracking
+        // (Assuming we might not have it in the component directly, we check for it)
+        try {
+            // We might need to pass email in props if available, or fetch it.
+            // In hypermind, the user email is usually managed globally or passed in. 
+            // Onboarding might not have email directly available unless passed.
+            // However, if the main app wraps this in Clerk, we can save the payload and let the parent handle the API call.
+            onComplete(payload);
+        } catch (e) {
+            console.error("Failed to sequence complete", e);
+        }
     };
 
     // Validations

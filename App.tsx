@@ -5,11 +5,12 @@ import { Onboarding } from './components/Onboarding';
 import { ChatInterface } from './components/ChatInterface';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Spotlight } from './components/ui/spotlight';
-import { BrainCircuit } from 'lucide-react';
+import { BrainCircuit, Check, ArrowRight, Sparkles } from 'lucide-react';
 import { useUser, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { CouncilInterface } from './components/council/CouncilInterface';
 import { CouncilSetup } from './components/council/CouncilSetup';
 import { AgentConfig } from './lib/council/types';
+import { cn } from './lib/utils';
 
 
 export default function App() {
@@ -18,6 +19,9 @@ export default function App() {
     const [isOnboarded, setIsOnboarded] = useState(false);
     const [dbUser, setDbUser] = useState<any>(null);
     const [showLanding, setShowLanding] = useState(true);
+    const [showChoice, setShowChoice] = useState(false);
+    const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+    const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
 
     // Council State
     const [showCouncil, setShowCouncil] = useState(false);
@@ -32,14 +36,7 @@ export default function App() {
         console.log("App Auth State:", { isLoaded, isSignedIn, hasUser: !!user });
 
         if (isLoaded && isSignedIn && user) {
-            // 1. Immediately transition UI to prevent loop/glitch
-            if (!hasStarted) {
-                console.log("User loaded, starting app...");
-                setHasStarted(true);
-                setTimeout(() => setShowLanding(false), 800);
-            }
-
-            // 2. Sync to DB in background
+            // Background sync is primary for data retrieval
             const syncUser = async () => {
                 try {
                     const res = await fetch('/api/user/sync', {
@@ -57,8 +54,24 @@ export default function App() {
                     if (res.ok) {
                         const data = await res.json();
                         setDbUser(data);
-                        if (data?.progress?.completedModules?.length > 0) {
-                            setIsOnboarded(true);
+
+                        // Check if they are already onboarded
+                        const isUserOnboarded = !!(data?.onboarding?.qualification);
+                        setIsOnboarded(isUserOnboarded);
+
+                        if (isUserOnboarded) {
+                            // Only show choice if we haven't already moved to the dashboard in this session
+                            setShowChoice(true);
+
+                            // Increment session count
+                            fetch('/api/user/progress', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    email: user.primaryEmailAddress?.emailAddress,
+                                    progress: { totalSessions: (data.progress?.totalSessions || 0) + 1 }
+                                })
+                            }).catch(() => { });
                         }
                     }
                 } catch (error) {
@@ -127,16 +140,50 @@ export default function App() {
                     {/* SHOW DASHBOARD ONLY WHEN SIGNED IN */}
                     <SignedIn>
                         <ErrorBoundary>
-                            {!isOnboarded ? (
+                            {(!isOnboarded || showChoice) && !forceShowOnboarding ? (
+                                <div className="absolute inset-0 z-30">
+                                    <SplineSceneBasic
+                                        onStart={() => {
+                                            if (!isOnboarded) setForceShowOnboarding(true);
+                                        }}
+                                        isLoggedIn={true}
+                                        returningUser={showChoice}
+                                        dbUser={dbUser}
+                                        onContinue={(subj) => {
+                                            setSelectedSubject(subj);
+                                            setIsOnboarded(true);
+                                            setShowChoice(false);
+                                            setHasStarted(true);
+                                            setShowLanding(false);
+                                        }}
+                                        onStartFresh={async () => {
+                                            if (user?.primaryEmailAddress?.emailAddress) {
+                                                await fetch('/api/user/reset', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ email: user.primaryEmailAddress.emailAddress })
+                                                });
+                                            }
+                                            setIsOnboarded(false);
+                                            setShowChoice(false);
+                                            setDbUser(null);
+                                            setForceShowOnboarding(true);
+                                        }}
+                                    />
+                                </div>
+                            ) : forceShowOnboarding ? (
                                 <div className="flex-1 min-h-0 animate-in fade-in zoom-in-95 duration-700 p-6 md:p-8">
-                                    <Onboarding onComplete={handleOnboardingComplete} />
+                                    <Onboarding onComplete={(data) => {
+                                        setForceShowOnboarding(false);
+                                        handleOnboardingComplete(data);
+                                    }} />
                                 </div>
                             ) : (
                                 <div className="flex h-full w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
                                         <ChatInterface
                                             mode="learn"
-                                            userData={{ ...dbUser, ...user }}
+                                            userData={{ ...dbUser, ...user, selectedSubject }}
                                             onLaunchCouncil={() => setShowSetup(true)}
                                         />
                                     </div>

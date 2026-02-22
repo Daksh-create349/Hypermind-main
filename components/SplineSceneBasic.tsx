@@ -11,10 +11,16 @@ import { SignIn, SignUp } from '@clerk/clerk-react';
 interface Props {
     onStart: () => void;
     isLoggedIn?: boolean;
+    returningUser?: boolean;
+    dbUser?: any;
+    onContinue?: (subject: string) => void;
+    onStartFresh?: () => void;
 }
 
-export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
+export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, onContinue, onStartFresh }: Props) {
     const [step, setStep] = useState<'intro' | 'auth'>('intro');
+    const [subStep, setSubStep] = useState<'default' | 'continue'>('default');
+    const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoadingAuth, setIsLoadingAuth] = useState(false);
@@ -70,21 +76,70 @@ export function SplineSceneBasic({ onStart, isLoggedIn }: Props) {
                             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                             <span className="text-xs font-medium text-neutral-300">Adaptive Learning Engine</span>
                         </div>
-                        <h1 className="text-5xl md:text-7xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white via-neutral-200 to-neutral-600 tracking-tight">
+                        <h1 className="text-5xl md:text-7xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white via-neutral-200 to-neutral-600 tracking-tight pb-2">
                             HyperMind
                         </h1>
                         <p className="mt-6 text-lg text-neutral-400 max-w-lg leading-relaxed">
-                            Your personal AI Learning Companion. Democratizing high-quality education with adaptive pathways.
+                            {returningUser
+                                ? "Welcome back, pick up where you left off or start a completely fresh learning voyage."
+                                : "Your personal AI Learning Companion. Democratizing high-quality education with adaptive pathways."}
                         </p>
 
 
-                        <button
-                            onClick={() => setStep('auth')}
-                            className="mt-10 group relative w-fit flex items-center gap-3 bg-white text-black px-8 py-4 rounded-full font-semibold text-lg hover:bg-neutral-100 transition-all hover:scale-105 active:scale-95 hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
-                        >
-                            Start Learning
-                            <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
-                        </button>
+                        {returningUser ? (
+                            <div className="mt-10 flex flex-col gap-4">
+                                {subStep === 'continue' ? (
+                                    <div className="space-y-4">
+                                        <button
+                                            onClick={() => setSubStep('default')}
+                                            className="flex items-center gap-2 text-xs text-neutral-500 hover:text-white transition-colors mb-2"
+                                        >
+                                            <ArrowLeft size={14} /> Back to options
+                                        </button>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {(dbUser?.onboarding?.subjects || []).map((subj: string) => (
+                                                <button
+                                                    key={subj}
+                                                    onClick={() => {
+                                                        setSelectedSubject(subj);
+                                                        onContinue?.(subj);
+                                                    }}
+                                                    className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 text-left hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between group"
+                                                >
+                                                    <span className="text-neutral-300 font-medium group-hover:text-white">{subj}</span>
+                                                    <ArrowRight size={16} className="text-neutral-600 group-hover:text-white transition-transform group-hover:translate-x-1" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-4">
+                                        <button
+                                            onClick={() => setSubStep('continue')}
+                                            className="group relative w-fit flex items-center gap-3 bg-white text-black px-8 py-4 rounded-full font-semibold text-lg hover:bg-neutral-100 transition-all hover:scale-105 active:scale-95 hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
+                                        >
+                                            Continue Learning
+                                            <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
+                                        </button>
+                                        <button
+                                            onClick={onStartFresh}
+                                            className="group relative w-fit flex items-center gap-3 bg-neutral-900 border border-neutral-800 text-white px-8 py-4 rounded-full font-semibold text-lg hover:bg-neutral-800 transition-all hover:scale-105 active:scale-95"
+                                        >
+                                            Start Fresh Path
+                                            <Globe size={20} className="text-neutral-500 group-hover:text-indigo-400 transition-colors" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => isLoggedIn ? onStart() : setStep('auth')}
+                                className="mt-10 group relative w-fit flex items-center gap-3 bg-white text-black px-8 py-4 rounded-full font-semibold text-lg hover:bg-neutral-100 transition-all hover:scale-105 active:scale-95 hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
+                            >
+                                Start Learning
+                                <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
+                            </button>
+                        )}
                     </div>
                 </div>
 

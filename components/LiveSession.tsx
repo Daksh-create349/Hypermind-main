@@ -21,6 +21,10 @@ export function LiveSession({ onClose }: LiveSessionProps) {
     const nextStartTimeRef = useRef<number>(0);
     const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
+    const isMicOnRef = useRef(isMicOn);
+    useEffect(() => { isMicOnRef.current = isMicOn; }, [isMicOn]);
+    const [speechStatus, setSpeechStatus] = useState<string | null>(null);
+
     // Audio Input Refs
     const inputAudioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -30,6 +34,131 @@ export function LiveSession({ onClose }: LiveSessionProps) {
     useEffect(() => {
         let mounted = true;
         let cleanupFunc: (() => void) | undefined;
+
+        const startOpenRouterSession = async (apiKey: string, isMounted: boolean) => {
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                setErrorMsg("Voice API not supported in this browser.");
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                if (isMounted) {
+                    setIsConnected(true);
+                    setSpeechStatus("Listening...");
+                }
+            };
+
+            // Setup Audio Analyser for the visualizer
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            const audioCtx = new AudioContextClass();
+            const source = audioCtx.createMediaStreamSource(streamRef.current!);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const updateVolume = () => {
+                if (!isMounted) return;
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+                const avg = sum / bufferLength;
+                setVolume(avg / 2); // Map to 0-100 range
+                requestAnimationFrame(updateVolume);
+            };
+            updateVolume();
+
+            recognition.onresult = async (event: any) => {
+                if (!isMicOnRef.current) return;
+                const transcript = event.results[event.results.length - 1][0].transcript;
+                if (!transcript) return;
+
+                console.log("Speech detected:", transcript);
+                setSpeechStatus(`Heard: "${transcript.substring(0, 20)}..."`);
+
+                try {
+                    setSpeechStatus("Thinking...");
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${apiKey}`,
+                            "Content-Type": "application/json",
+                            "X-Title": "HyperMind",
+                            "HTTP-Referer": window.location.origin
+                        },
+                        body: JSON.stringify({
+                            model: "google/gemini-2.0-flash-lite-preview-02-05:free",
+                            messages: [
+                                { role: "system", content: "You are a witty, concise AI tutor in a voice call. Keep responses brief and verbal-friendly." },
+                                { role: "user", content: transcript }
+                            ]
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        setSpeechStatus(`API Error: ${response.status}`);
+                        console.error("OpenRouter Error:", err);
+                        return;
+                    }
+
+                    const data = await response.json();
+                    const text = data.choices[0]?.message?.content;
+                    if (text && isMounted) {
+                        setSpeechStatus("Speaking...");
+                        const utterance = new SpeechSynthesisUtterance(text);
+                        const voices = window.speechSynthesis.getVoices();
+                        const preferredVoice = voices.find(v => v.name.includes('Google') || v.lang.startsWith('en-US'));
+                        if (preferredVoice) utterance.voice = preferredVoice;
+
+                        utterance.onend = () => {
+                            if (isMounted) setSpeechStatus("Listening...");
+                        };
+                        window.speechSynthesis.speak(utterance);
+                    }
+                } catch (e) {
+                    console.error("OpenRouter Voice Failed", e);
+                    setSpeechStatus("Network Error.");
+                }
+            };
+
+            recognition.onerror = (e: any) => {
+                console.error("Recognition Error:", e);
+                if (isMounted) {
+                    if (e.error === 'no-speech') {
+                        try {
+                            recognition.start();
+                            setSpeechStatus("Listening...");
+                        } catch (err) { }
+                    } else if (e.error === 'network') {
+                        setSpeechStatus("Check your connection.");
+                    } else {
+                        setSpeechStatus(`Mic Status: ${e.error}`);
+                    }
+                }
+            };
+
+            recognition.onend = () => {
+                if (isMounted && isMicOnRef.current) {
+                    try { recognition.start(); } catch (err) { }
+                }
+            };
+
+            recognition.start();
+
+            cleanupFunc = () => {
+                recognition.stop();
+                window.speechSynthesis.cancel();
+                audioCtx.close();
+            };
+        };
 
         const startSession = async () => {
             try {
@@ -63,7 +192,20 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                     videoRef.current.play().catch(() => { /* ignore play errors */ });
                 }
 
-                const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
+                const nativeKey = import.meta.env.VITE_GEMINI_NATIVE_KEY;
+                const standardKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+                let apiKeyToUse = nativeKey;
+                if (!apiKeyToUse && standardKey?.startsWith('AIza')) {
+                    apiKeyToUse = standardKey;
+                }
+
+                if (!apiKeyToUse) {
+                    console.log("No native key found, entering OpenRouter Voice Emulation mode.");
+                    return startOpenRouterSession(standardKey, mounted);
+                }
+
+                const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
 
                 // Audio Output Context - Handle AudioContext possibly not being available immediately
                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -88,11 +230,19 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                 silenceNode.gain.value = 0;
                 silenceNode.connect(inputAudioContextRef.current.destination);
 
+                // Add connection timeout
+                const connectionTimeout = setTimeout(() => {
+                    if (!isConnected && mounted) {
+                        setErrorMsg("Connection Timeout: Is your API key valid?");
+                    }
+                }, 10000);
+
                 // Connect to Gemini Live
                 const sessionPromise = ai.live.connect({
-                    model: 'gemini-1.5-flash-002',
+                    model: 'gemini-2.0-flash-lite-preview-02-05',
                     callbacks: {
                         onopen: () => {
+                            clearTimeout(connectionTimeout);
                             if (!mounted) return;
                             setIsConnected(true);
                             nextStartTimeRef.current = audioContextRef.current?.currentTime || 0;
@@ -191,10 +341,17 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                         onclose: () => {
                             console.log("Live session closed");
                             if (mounted) setIsConnected(false);
+                            clearTimeout(connectionTimeout);
                         },
                         onerror: (e) => {
                             console.error("Live session error", e);
-                            setErrorMsg("Connection Lost");
+                            clearTimeout(connectionTimeout);
+                            // Detect Forbidden (Invalid Key) vs other errors
+                            if (e.toString().includes('403') || e.toString().includes('Forbidden')) {
+                                setErrorMsg("Access Denied: Is your Gemini Key valid/native?");
+                            } else {
+                                setErrorMsg("Neural Link Interrupted.");
+                            }
                         }
                     },
                     config: {
@@ -202,15 +359,21 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                         speechConfig: {
                             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
                         },
-                        systemInstruction: "You are a helpful, witty, and concise AI tutor. We are in a real-time voice call. Keep responses relatively short and conversational."
+                        systemInstruction: "You are a helpful, witty, and concise AI tutor. We are in a real-time voice call. Keep responses relatively short and conversational. You can see the user through their camera feed if they enable it."
                     }
                 });
 
                 // Handle initial connection failure (e.g. Quota Exceeded)
                 sessionPromise.catch(e => {
-                    const isQuota = e.message?.includes('429') || e.status === 429 || e.toString().includes('Quota');
+                    clearTimeout(connectionTimeout);
+                    const eStr = e.toString();
+                    const isQuota = eStr.includes('429') || e.status === 429 || eStr.includes('Quota');
+                    const isForbidden = eStr.includes('403') || e.status === 403 || eStr.includes('Forbidden');
+
                     if (isQuota) {
-                        setErrorMsg("Quota Exceeded (Rate Limit). Try again later.");
+                        setErrorMsg("Quota Exceeded (Rate Limit). Try Gemini Pro/Flash in AI Studio.");
+                    } else if (isForbidden) {
+                        setErrorMsg("Invalid Key Environment: Google API Key required (not OpenRouter).");
                     } else {
                         setErrorMsg("Failed to establish neural link.");
                     }
@@ -255,7 +418,9 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                 const isQuota = e.message?.includes('429') || e.status === 429 || e.toString().includes('Quota');
                 const isPermission = e.message === 'PermissionDenied' || e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError';
 
-                if (isQuota) {
+                if (e.message === 'NativeKeyRequired') {
+                    setErrorMsg("Native Google Gemini Key Required. Add VITE_GEMINI_NATIVE_KEY (AIza...) to .env");
+                } else if (isQuota) {
                     setErrorMsg("Quota Limit Reached.");
                 } else if (isPermission) {
                     setErrorMsg("Permission Denied: Please allow Camera/Mic access.");
@@ -362,8 +527,8 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                     </div>
                     <div className="absolute bottom-8 text-center">
                         <h3 className="text-white font-bold text-lg tracking-tight">HyperMind AI</h3>
-                        <p className={cn("text-neutral-400 text-sm font-medium transition-opacity", isConnected ? "animate-pulse" : "opacity-50")}>
-                            {errorMsg ? "System Offline" : isConnected ? "Listening & Watching" : "Offline"}
+                        <p className={cn("text-neutral-400 text-sm font-medium transition-opacity", (isConnected || speechStatus) ? "animate-pulse" : "opacity-50")}>
+                            {errorMsg ? "System Offline" : speechStatus || (isConnected ? "Listening & Watching" : "Offline")}
                         </p>
                     </div>
                 </div>
