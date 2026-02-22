@@ -75,7 +75,8 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
             // Check Limits
             if (roundCount >= MAX_ROUNDS) {
                 setIsDebating(false);
-                await generateVerdict();
+                // Deliberate delay before the final verdict to let the user breathe
+                setTimeout(() => generateVerdict(), 1500);
                 return;
             }
 
@@ -129,36 +130,37 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
     };
 
     const generateVerdict = async () => {
-        if (showReport) return; // Already done
+        if (showReport) return;
         setIsDebating(false);
         setCurrentSpeaker('judge');
 
-        // Heavy Rate Limit Protection for the big model call
-        await new Promise(r => setTimeout(r, 2000));
+        // Delay to allow the "Judge is thinking" status to be seen and UI to settle
+        await new Promise(r => setTimeout(r, 1500));
 
         try {
             const report = await engine.generateVerdict();
-            setReportContent(report);
-            setShowReport(true);
+            if (report) {
+                setReportContent(report);
+                setShowReport(true);
 
-            // Save Council Session to DB
-            const userEmail = userProfile?.primaryEmailAddress?.emailAddress || userProfile?.email;
-            if (userEmail) {
-                try {
-                    await fetch('http://localhost:3001/api/council', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            email: userEmail,
-                            topic: topic,
-                            context: context,
-                            agents: initialAgents,
-                            messages: engine.messages
-                        })
-                    });
-                } catch (e) { console.error("Failed to sync council session", e); }
+                // Save Council Session to DB
+                const userEmail = userProfile?.primaryEmailAddress?.emailAddress || userProfile?.email;
+                if (userEmail) {
+                    try {
+                        await fetch('http://localhost:3001/api/council', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: userEmail,
+                                topic: topic,
+                                context: context,
+                                agents: initialAgents,
+                                messages: engine.messages
+                            })
+                        });
+                    } catch (e) { console.error("Failed to sync council session", e); }
+                }
             }
-
         } catch (e) {
             console.error("Verdict Error:", e);
         }
@@ -168,26 +170,45 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
 
     // Initialize Mermaid
     useEffect(() => {
-        mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            fontFamily: 'Inter, system-ui, sans-serif'
+        });
     }, []);
 
     // Render Mermaid when report is shown
     useEffect(() => {
         if (showReport && reportContent) {
-            // Find mermaid block
-            const mermaidMatch = reportContent.match(/```mermaid([\s\S]*?)```/);
+            // Find mermaid block - more robust regex
+            const mermaidRegex = /```mermaid\s*([\s\S]*?)```/i;
+            const mermaidMatch = reportContent.match(mermaidRegex);
+
             if (mermaidMatch && mermaidMatch[1]) {
-                setTimeout(async () => {
+                const chartCode = mermaidMatch[1].trim();
+
+                // Use a longer timeout and handle potential rendering issues
+                const renderTimeout = setTimeout(async () => {
                     try {
                         const element = document.getElementById('mermaid-chart');
                         if (element) {
-                            const { svg } = await mermaid.render('mermaid-svg', mermaidMatch[1].trim());
+                            // Unique ID for each render to avoid conflicts
+                            const id = `mermaid-svg-${Date.now()}`;
+                            const { svg } = await mermaid.render(id, chartCode);
                             element.innerHTML = svg;
                         }
                     } catch (e) {
-                        console.error("Mermaid Render Error", e);
+                        console.error("Mermaid Render Error:", e);
+                        // Fallback: just show the code if rendering fails
+                        const element = document.getElementById('mermaid-chart');
+                        if (element) {
+                            element.innerHTML = `<pre class="text-[10px] opacity-50 overflow-auto">${chartCode}</pre>`;
+                        }
                     }
-                }, 500);
+                }, 800);
+
+                return () => clearTimeout(renderTimeout);
             }
         }
     }, [showReport, reportContent]);
