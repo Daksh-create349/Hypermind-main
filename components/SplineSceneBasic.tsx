@@ -13,11 +13,12 @@ interface Props {
     isLoggedIn?: boolean;
     returningUser?: boolean;
     dbUser?: any;
-    onContinue?: (subject: string) => void;
+    journeys?: any[];
+    onContinue?: (journey: any) => void;
     onStartFresh?: () => void;
 }
 
-export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, onContinue, onStartFresh }: Props) {
+export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, journeys = [], onContinue, onStartFresh }: Props) {
     const [step, setStep] = useState<'intro' | 'auth'>('intro');
     const [subStep, setSubStep] = useState<'default' | 'continue'>('default');
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -82,7 +83,9 @@ export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, o
                         <p className="mt-6 text-lg text-neutral-400 max-w-lg leading-relaxed">
                             {returningUser
                                 ? "Welcome back, pick up where you left off or start a completely fresh learning voyage."
-                                : "Your personal AI Learning Companion. Democratizing high-quality education with adaptive pathways."}
+                                : isLoggedIn && dbUser?.name
+                                    ? `Welcome, ${dbUser.name}. Ready to begin your first learning journey?`
+                                    : "Your personal AI Learning Companion. Democratizing high-quality education with adaptive pathways."}
                         </p>
 
 
@@ -96,20 +99,26 @@ export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, o
                                         >
                                             <ArrowLeft size={14} /> Back to options
                                         </button>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {(dbUser?.onboarding?.subjects || []).map((subj: string) => (
-                                                <button
-                                                    key={subj}
-                                                    onClick={() => {
-                                                        setSelectedSubject(subj);
-                                                        onContinue?.(subj);
-                                                    }}
-                                                    className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 text-left hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between group"
-                                                >
-                                                    <span className="text-neutral-300 font-medium group-hover:text-white">{subj}</span>
-                                                    <ArrowRight size={16} className="text-neutral-600 group-hover:text-white transition-transform group-hover:translate-x-1" />
-                                                </button>
-                                            ))}
+                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                            {journeys.length > 0 ? (
+                                                journeys.map((journey: any) => (
+                                                    <button
+                                                        key={journey._id}
+                                                        onClick={() => {
+                                                            onContinue?.(journey);
+                                                        }}
+                                                        className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 text-left hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between group"
+                                                    >
+                                                        <div className="flex flex-col">
+                                                            <span className="text-neutral-300 font-medium group-hover:text-white">{journey.subject}</span>
+                                                            <span className="text-xs text-neutral-500">Last active: {new Date(journey.updatedAt).toLocaleDateString()}</span>
+                                                        </div>
+                                                        <ArrowRight size={16} className="text-neutral-600 group-hover:text-white transition-transform group-hover:translate-x-1" />
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="text-neutral-500 text-sm py-4">No recent journeys found.</div>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
@@ -136,7 +145,7 @@ export function SplineSceneBasic({ onStart, isLoggedIn, returningUser, dbUser, o
                                 onClick={() => isLoggedIn ? onStart() : setStep('auth')}
                                 className="mt-10 group relative w-fit flex items-center gap-3 bg-white text-black px-8 py-4 rounded-full font-semibold text-lg hover:bg-neutral-100 transition-all hover:scale-105 active:scale-95 hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
                             >
-                                Start Learning
+                                {isLoggedIn ? "Begin My Journey" : "Start Learning"}
                                 <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
                             </button>
                         )}

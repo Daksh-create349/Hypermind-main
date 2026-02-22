@@ -99,17 +99,8 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
 
     // Learning Path State
     // Learning Path State
-    const [completedModules, setCompletedModules] = useState<string[]>(() => {
-        try {
-            const saved = localStorage.getItem('hypermind_progress');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-            }
-        } catch (e) { }
-        return userData?.progress?.completedModules || [];
-    });
-    const [currentModule, setCurrentModule] = useState<string | null>(userData?.progress?.currentModule || null);
+    const [completedModules, setCompletedModules] = useState<string[]>(userData?.selectedJourney?.progress?.completedModules || userData?.progress?.completedModules || []);
+    const [currentModule, setCurrentModule] = useState<string | null>(userData?.selectedJourney?.progress?.currentModule || userData?.progress?.currentModule || null);
     const [showCertificate, setShowCertificate] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
     const [certificateName, setCertificateName] = useState(userData?.name || "Student");
@@ -120,7 +111,7 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     const [topicModules, setTopicModules] = useState<Topic[] | null>(null);
     const [isLoadingModules, setIsLoadingModules] = useState(false);
     const [topicModulesMap, setTopicModulesMap] = useState<Record<string, Topic[]>>(() => {
-        return userData?.progress?.topicModules || {};
+        return userData?.selectedJourney?.progress?.topicModules || userData?.progress?.topicModules || {};
     });
 
     // Persona State
@@ -142,7 +133,17 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
 
     // Sync state with props when userData arrives or changes
     useEffect(() => {
-        if (userData?.progress) {
+        if (userData?.selectedJourney) {
+            const j = userData.selectedJourney;
+            if (j.progress?.completedModules) setCompletedModules(j.progress.completedModules);
+            if (j.progress?.currentModule) setCurrentModule(j.progress.currentModule);
+            if (j.progress?.topicModules) setTopicModulesMap(prev => ({ ...prev, ...j.progress.topicModules }));
+
+            // If journey has a chatId, we need to load those messages
+            if (j.chatId && sessionId === 'default') {
+                setSessionId(j.chatId);
+            }
+        } else if (userData?.progress) {
             if (userData.progress.completedModules && completedModules.length === 0) {
                 setCompletedModules(userData.progress.completedModules);
             }
@@ -151,10 +152,6 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             }
             if (userData.progress.topicModules) {
                 setTopicModulesMap(prev => ({ ...prev, ...userData.progress.topicModules }));
-            }
-            // If we have a last active subject and no selected one yet, use it
-            if (userData.progress.lastActiveSubject && !selectedTopic && !topicModules) {
-                // This will trigger the auto-load effect if chatSession is ready
             }
         }
     }, [userData]);
@@ -194,44 +191,84 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 .then(data => {
                     if (Array.isArray(data)) {
                         setPastChats(data);
-                        // Auto-resume active chat on first load if nothing is loaded
-                        if (messages.length === 0 && userData?.progress?.activeChatId) {
-                            const activeChat = data.find(c => c._id === userData.progress.activeChatId);
-                            if (activeChat && activeChat.messages) {
-                                setMessages(activeChat.messages);
-                                setSessionId(activeChat._id); // Triggers initChat to build AI context for this ID
-                            }
-                        }
                     }
                 })
                 .catch(err => console.error("Failed to fetch history", err));
         }
     }, [userData?.email, showHistory]);
 
+    // Load messages for current session
+    useEffect(() => {
+        if (sessionId && !sessionId.startsWith('default')) {
+            const loadSession = async () => {
+                try {
+                    // Check if we already have it in pastChats to avoid extra fetch
+                    const cachedChat = pastChats.find(c => c._id === sessionId);
+                    if (cachedChat) {
+                        setMessages(cachedChat.messages);
+                    } else {
+                        // If not in cache (e.g. direct load from journey), fetch it
+                        // We don't have a direct /api/chat/:id yet, so we fetch all or just wait for pastChats to load
+                        // For now, if it's not in pastChats, we'll wait or fetch
+                        if (pastChats.length > 0) {
+                            // If pastChats is loaded and we still don't have it, it might be a bug or sync delay
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load session", e);
+                }
+            };
+            loadSession();
+        } else if (sessionId === 'default' && messages.length > 0) {
+            // New session, clear messages
+            setMessages([]);
+        }
+    }, [sessionId, pastChats]);
+
     // Background sync of progress
     useEffect(() => {
-        // CRITICAL: Preserve existing curricula by only syncing if we have data 
-        // OR if the userData has already been loaded from the DB.
-        const hasLocalData = Object.keys(topicModulesMap).length > 0;
-        const isUserDataLoaded = !!userData?.progress;
+        if (!userData?.email) return;
 
-        if (userData?.email && (hasLocalData || isUserDataLoaded)) {
-            fetch('/api/user/progress', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: userData.email,
-                    progress: {
-                        completedModules,
-                        currentModule,
-                        topicModules: topicModulesMap,
-                        activeChatId: sessionId.startsWith('default') ? null : sessionId,
-                        lastActiveSubject: selectedTopic || userData?.selectedSubject || userData?.progress?.lastActiveSubject
-                    }
-                })
-            }).catch(e => console.error("Failed to sync progress", e));
-        }
-    }, [completedModules, currentModule, sessionId, topicModulesMap, userData?.email]);
+        const syncProgress = async () => {
+            try {
+                // 1. Global User Progress Sync (legacy/fallback)
+                fetch('/api/user/progress', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: userData.email,
+                        progress: {
+                            completedModules,
+                            currentModule,
+                            topicModules: topicModulesMap,
+                            activeChatId: sessionId.startsWith('default') ? null : sessionId,
+                            lastActiveSubject: selectedTopic || userData?.selectedSubject || userData?.progress?.lastActiveSubject
+                        }
+                    })
+                }).catch(() => { });
+
+                // 2. Journey-Specific Progress Sync
+                if (userData?.selectedJourney?._id) {
+                    fetch(`/api/journey/${userData.selectedJourney._id}/progress`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            progress: {
+                                completedModules,
+                                currentModule,
+                                topicModules: topicModulesMap
+                            },
+                            chatId: sessionId.startsWith('default') ? null : sessionId
+                        })
+                    }).catch(() => { });
+                }
+            } catch (e) {
+                console.error("Sync failed", e);
+            }
+        };
+
+        syncProgress();
+    }, [completedModules, currentModule, sessionId, topicModulesMap, userData?.email, userData?.selectedJourney?._id]);
 
     useEffect(() => {
         const initChat = async () => {
@@ -314,7 +351,30 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                 if (json.curriculum) { isCurriculum = true; curriculumData = json.curriculum; }
                 if (json.youtube) { youtubeQueries = json.youtube; }
 
-                content = content.replace(JSON.stringify(rawJson), '').replace(/```json[\s\S]*? ```/g, '').replace(/```[\s\S]*? ```/g, '').trim();
+                // Robust stripping: remove code blocks and then any leftovers that look like this specific JSON
+                content = content
+                    .replace(/```json[\s\S]*?```/g, '')
+                    .replace(/```[\s\S]*?```/g, (match) => {
+                        // Only remove if it looks like JSON
+                        if (match.includes('{') && match.includes(':')) return '';
+                        return match;
+                    })
+                    .trim();
+
+                // If it's still there as raw text (no backticks)
+                if (content.includes('{') && content.includes('}')) {
+                    // This is a bit aggressive but helps if AI sends raw JSON without backticks
+                    const lastBrace = content.lastIndexOf('}');
+                    const firstBrace = content.indexOf('{');
+                    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                        // Check if this part is valid JSON and matches our data
+                        const potentialJson = content.substring(firstBrace, lastBrace + 1);
+                        try {
+                            JSON.parse(potentialJson);
+                            content = content.replace(potentialJson, '').trim();
+                        } catch (e) { }
+                    }
+                }
             }
 
             // If generic content is detected, try to strip it or leave it empty if we have rich data
@@ -636,10 +696,10 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
     // Memoize this data to prevent Diagram re-renders loops
     const initialDiagramData = useMemo(() => {
         // Prioritize actually selected subject if coming from Continue flow
-        const subject = userData?.selectedSubject || userData?.onboarding?.subjects?.[0] || userData?.subjects?.[0] || "Learning Path";
+        const subject = userData?.selectedJourney?.subject || userData?.selectedSubject || userData?.onboarding?.subjects?.[0] || userData?.subjects?.[0] || "Learning Path";
 
-        // Check for new Roadmap structure
-        const roadmapData = userData?.onboarding?.roadmap || userData?.roadmap;
+        // Check for Roadmap structure in Journey first
+        const roadmapData = userData?.selectedJourney?.onboarding?.roadmap || userData?.onboarding?.roadmap || userData?.roadmap;
 
         if (roadmapData && Array.isArray(roadmapData)) {
             const nodes: any[] = [];

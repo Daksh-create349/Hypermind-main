@@ -21,6 +21,8 @@ export default function App() {
     const [showLanding, setShowLanding] = useState(true);
     const [showChoice, setShowChoice] = useState(false);
     const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+    const [selectedJourney, setSelectedJourney] = useState<any>(null);
+    const [journeys, setJourneys] = useState<any[]>([]);
     const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
 
     // Council State
@@ -30,12 +32,17 @@ export default function App() {
     const [councilTopic, setCouncilTopic] = useState("");
     const [councilContext, setCouncilContext] = useState("");
 
+    // Sync state
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [dataLoaded, setDataLoaded] = useState(false);
+
     // Sync User with Backend when Signed In
     useEffect(() => {
         // Log state execution for debugging
         console.log("App Auth State:", { isLoaded, isSignedIn, hasUser: !!user });
 
         if (isLoaded && isSignedIn && user) {
+            setIsSyncing(true);
             // Background sync is primary for data retrieval
             const syncUser = async () => {
                 try {
@@ -55,33 +62,45 @@ export default function App() {
                         const data = await res.json();
                         setDbUser(data);
 
-                        // Check if they are already onboarded
-                        const isUserOnboarded = !!(data?.onboarding?.qualification);
-                        setIsOnboarded(isUserOnboarded);
+                        // Fetch Journeys
+                        const journeysRes = await fetch(`/api/journeys?email=${user.primaryEmailAddress?.emailAddress}`);
+                        if (journeysRes.ok) {
+                            const journeysData = await journeysRes.json();
+                            setJourneys(journeysData);
 
-                        if (isUserOnboarded) {
-                            // Only show choice if we haven't already moved to the dashboard in this session
-                            setShowChoice(true);
+                            // Check if they are already onboarded
+                            const isUserOnboarded = journeysData.length > 0;
+                            setIsOnboarded(isUserOnboarded);
 
-                            // Increment session count
-                            fetch('/api/user/progress', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    email: user.primaryEmailAddress?.emailAddress,
-                                    progress: { totalSessions: (data.progress?.totalSessions || 0) + 1 }
-                                })
-                            }).catch(() => { });
+                            if (isUserOnboarded) {
+                                setShowChoice(true);
+
+                                // Increment session count for user
+                                fetch('/api/user/progress', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        email: user.primaryEmailAddress?.emailAddress,
+                                        progress: { totalSessions: (data.progress?.totalSessions || 0) + 1 }
+                                    })
+                                }).catch(() => { });
+                            }
                         }
                     }
                 } catch (error) {
                     console.error("Sync error (non-fatal):", error);
+                } finally {
+                    setIsSyncing(false);
+                    setDataLoaded(true);
                 }
             };
 
             syncUser();
+        } else if (isLoaded && !isSignedIn) {
+            setDataLoaded(true);
+            setIsSyncing(false);
         }
-    }, [isLoaded, isSignedIn, user]); // Removed hasStarted from deps to prevent loops
+    }, [isLoaded, isSignedIn, user]);
 
     const handleStart = React.useCallback(() => {
         setHasStarted(true);
@@ -89,13 +108,9 @@ export default function App() {
     }, []);
 
     const handleOnboardingComplete = async (data: any) => {
-        setIsOnboarded(true);
-        // Immediate local update for UI
-        setDbUser((prev: any) => ({ ...prev, onboarding: data }));
-
         if (isSignedIn && user) {
             try {
-                await fetch('/api/user/onboarding', {
+                const res = await fetch('/api/user/onboarding', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -103,6 +118,15 @@ export default function App() {
                         data: data
                     })
                 });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    setDbUser(result.user);
+                    setSelectedJourney(result.journey);
+                    setSelectedSubject(result.journey.subject);
+                    setJourneys(prev => [result.journey, ...prev]);
+                    setIsOnboarded(true);
+                }
             } catch (e) {
                 console.error("Failed to save onboarding", e);
             }
@@ -133,40 +157,48 @@ export default function App() {
                     {/* SHOW LANDING ONLY WHEN SIGNED OUT */}
                     <SignedOut>
                         <div className="absolute inset-0 z-30">
-                            <SplineSceneBasic onStart={() => { }} />
+                            <SplineSceneBasic
+                                onStart={() => { }}
+                                isLoggedIn={false}
+                            />
                         </div>
                     </SignedOut>
 
                     {/* SHOW DASHBOARD ONLY WHEN SIGNED IN */}
                     <SignedIn>
                         <ErrorBoundary>
-                            {(!isOnboarded || showChoice) && !forceShowOnboarding ? (
+                            {!dataLoaded ? (
+                                <div className="h-screen w-full bg-black flex flex-col items-center justify-center text-white z-50">
+                                    <div className="relative w-24 h-24 mb-6">
+                                        <div className="absolute inset-0 border-t-2 border-indigo-500 rounded-full animate-spin"></div>
+                                        <div className="absolute inset-2 border-t-2 border-white/20 rounded-full animate-spin-slow"></div>
+                                        <BrainCircuit className="absolute inset-0 m-auto text-indigo-500 animate-pulse" size={32} />
+                                    </div>
+                                    <p className="text-neutral-500 text-sm font-medium tracking-widest uppercase">Synchronizing Neural Link</p>
+                                </div>
+                            ) : (!isOnboarded || showChoice) && !forceShowOnboarding ? (
                                 <div className="absolute inset-0 z-30">
                                     <SplineSceneBasic
                                         onStart={() => {
+                                            // If they are already signed in but not onboarded, we should verify
+                                            // they want to start onboarding.
                                             if (!isOnboarded) setForceShowOnboarding(true);
                                         }}
                                         isLoggedIn={true}
                                         returningUser={showChoice}
                                         dbUser={dbUser}
-                                        onContinue={(subj) => {
-                                            setSelectedSubject(subj);
+                                        journeys={journeys}
+                                        onContinue={(journey) => {
+                                            setSelectedJourney(journey);
+                                            setSelectedSubject(journey.subject);
                                             setIsOnboarded(true);
                                             setShowChoice(false);
                                             setHasStarted(true);
                                             setShowLanding(false);
                                         }}
                                         onStartFresh={async () => {
-                                            if (user?.primaryEmailAddress?.emailAddress) {
-                                                await fetch('/api/user/reset', {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({ email: user.primaryEmailAddress.emailAddress })
-                                                });
-                                            }
                                             setIsOnboarded(false);
                                             setShowChoice(false);
-                                            setDbUser(null);
                                             setForceShowOnboarding(true);
                                         }}
                                     />
@@ -183,7 +215,7 @@ export default function App() {
                                     <div className="flex-1 h-full relative flex flex-col min-w-0 bg-neutral-950">
                                         <ChatInterface
                                             mode="learn"
-                                            userData={{ ...dbUser, ...user, selectedSubject }}
+                                            userData={{ ...dbUser, ...user, selectedSubject, selectedJourney }}
                                             onLaunchCouncil={() => setShowSetup(true)}
                                         />
                                     </div>

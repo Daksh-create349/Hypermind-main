@@ -23,6 +23,7 @@ import User from '../lib/models/User';
 import Chat from '../lib/models/Chat';
 import Note from '../lib/models/Note';
 import CouncilSession from '../lib/models/CouncilSession';
+import Journey from '../lib/models/Journey';
 
 // Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -92,30 +93,50 @@ app.post('/api/user/onboarding', async (req, res) => {
             return;
         }
 
-        const user = await User.findOneAndUpdate(
+        const user = await User.findOne({ email });
+        if (!user) {
+            res.status(404).json({ error: "User not found" });
+            return;
+        }
+
+        // Create a new Journey instead of overwriting User onboarding
+        const subject = data.subjects && data.subjects.length > 0 ? data.subjects[0] : "New Journey";
+
+        const journey = await Journey.create({
+            userId: user._id,
+            subject: subject,
+            onboarding: {
+                qualification: data.qualification,
+                ageRange: data.ageRange,
+                language: data.language,
+                studyTime: data.studyTime,
+                learningDepth: data.learningDepth,
+                motivation: data.motivation,
+                assessmentScore: data.assessmentScore,
+                primaryGoal: data.primaryGoal,
+                secondaryGoals: data.secondaryGoals,
+                roadmap: data.roadmap,
+                preferredLanguage: data.preferredLanguage || data.language
+            },
+            progress: {
+                completedModules: [],
+                totalSessions: 1,
+                lastActive: new Date()
+            }
+        });
+
+        // Also update User with this as the last active subject/journey
+        await User.findOneAndUpdate(
             { email },
             {
                 $set: {
-                    onboarding: {
-                        qualification: data.qualification,
-                        ageRange: data.ageRange,
-                        language: data.language,
-                        studyTime: data.studyTime,
-                        subjects: data.subjects,
-                        learningDepth: data.learningDepth,
-                        motivation: data.motivation,
-                        assessmentScore: data.assessmentScore,
-                        primaryGoal: data.primaryGoal,
-                        secondaryGoals: data.secondaryGoals,
-                        roadmap: data.roadmap,
-                        preferredLanguage: data.preferredLanguage || data.language
-                    }
+                    'progress.lastActiveSubject': subject,
+                    'onboarding': journey.onboarding // Keep for backward compatibility if needed, but it will be overwritten by last journey
                 }
-            },
-            { new: true }
+            }
         );
 
-        res.json(user);
+        res.json({ user, journey });
     } catch (error) {
         console.error("Onboarding Save Error:", error);
         res.status(500).json({ error: "Failed to save onboarding data" });
@@ -156,14 +177,15 @@ app.post('/api/user/reset', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: "Email required" });
 
+        // Instead of full reset, we just clear the active state
+        // The journeys remain in the Journeys collection
         const user = await User.findOneAndUpdate(
             { email },
             {
                 $set: {
-                    'progress.completedModules': [],
                     'progress.currentModule': null,
                     'progress.activeChatId': null,
-                    'progress.topicModules': {},
+                    'progress.lastActiveSubject': null,
                     'onboarding': null
                 }
             },
@@ -216,6 +238,61 @@ app.get('/api/leaderboard', async (req, res) => {
     } catch (error) {
         console.error("Leaderboard Error:", error);
         res.status(500).json({ error: "Failed to fetch leaderboard" });
+    }
+});
+
+// Journey Routes
+app.get('/api/journeys', async (req, res) => {
+    try {
+        const { email } = req.query;
+        if (!email) return res.status(400).json({ error: "Email required" });
+
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        const journeys = await Journey.find({ userId: user._id }).sort({ updatedAt: -1 });
+        res.json(journeys);
+    } catch (error) {
+        console.error("Fetch Journeys Error:", error);
+        res.status(500).json({ error: "Failed to fetch journeys" });
+    }
+});
+
+app.get('/api/journey/:id', async (req, res) => {
+    try {
+        const journey = await Journey.findById(req.params.id);
+        if (!journey) return res.status(404).json({ error: "Journey not found" });
+        res.json(journey);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch journey" });
+    }
+});
+
+app.post('/api/journey/:id/progress', async (req, res) => {
+    try {
+        const { progress, chatId } = req.body;
+        const update: any = { $set: {} };
+
+        if (progress) {
+            if (progress.completedModules) update.$set['progress.completedModules'] = progress.completedModules;
+            if (progress.currentModule) update.$set['progress.currentModule'] = progress.currentModule;
+            if (progress.topicModules) update.$set['progress.topicModules'] = progress.topicModules;
+            update.$set['progress.lastActive'] = new Date();
+            update.$inc = { 'progress.totalSessions': 1 };
+        }
+
+        if (chatId) {
+            update.$set.chatId = chatId;
+        }
+
+        const journey = await Journey.findByIdAndUpdate(
+            req.params.id,
+            update,
+            { new: true }
+        );
+        res.json(journey);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update journey progress" });
     }
 });
 
