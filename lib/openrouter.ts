@@ -65,7 +65,7 @@ export class Chat {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173", // Required by OpenRouter
+                "HTTP-Referer": window.location.origin, // Matches Vercel automatically
                 "X-Title": "HyperMind" // Required by OpenRouter
             },
             body: JSON.stringify({
@@ -127,7 +127,7 @@ class OpenRouterModels {
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": "http://localhost:5173",
+                "HTTP-Referer": window.location.origin,
                 "X-Title": "HyperMind"
             },
             body: JSON.stringify({
