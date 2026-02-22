@@ -3,6 +3,7 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, Activity, AlertTriangle } from 
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { cn, base64ToUint8Array, uint8ArrayToBase64, decodeAudioData } from '../lib/utils';
 import { SplineScene } from './ui/spline';
+import { getAllApiKeys } from '../lib/openrouter';
 
 interface LiveSessionProps {
     onClose: () => void;
@@ -35,8 +36,8 @@ export function LiveSession({ onClose }: LiveSessionProps) {
         let mounted = true;
         let cleanupFunc: (() => void) | undefined;
 
-        const startOpenRouterSession = async (apiKey: string, isMounted: boolean) => {
-            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const startOpenRouterSession = async (isMounted: boolean) => {
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitRecognition || (window as any).webkitSpeechRecognition;
             if (!SpeechRecognition) {
                 setErrorMsg("Voice API not supported in this browser.");
                 return;
@@ -80,52 +81,70 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                 const transcript = event.results[event.results.length - 1][0].transcript;
                 if (!transcript) return;
 
-                console.log("Speech detected:", transcript);
                 setSpeechStatus(`Heard: "${transcript.substring(0, 20)}..."`);
 
-                try {
-                    setSpeechStatus("Thinking...");
-                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${apiKey}`,
-                            "Content-Type": "application/json",
-                            "X-Title": "HyperMind",
-                            "HTTP-Referer": window.location.origin
-                        },
-                        body: JSON.stringify({
-                            model: "google/gemini-2.0-flash-lite-preview-02-05:free",
-                            messages: [
-                                { role: "system", content: "You are a witty, concise AI tutor in a voice call. Keep responses brief and verbal-friendly." },
-                                { role: "user", content: transcript }
-                            ]
-                        })
-                    });
+                const apiKeys = getAllApiKeys();
+                if (apiKeys.length === 0) {
+                    setSpeechStatus("No API Keys found.");
+                    return;
+                }
 
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        setSpeechStatus(`API Error: ${response.status}`);
-                        console.error("OpenRouter Error:", err);
-                        return;
+                // Randomize keys for each request
+                const shuffledKeys = [...apiKeys].sort(() => Math.random() - 0.5);
+                let success = false;
+
+                for (const key of shuffledKeys) {
+                    try {
+                        setSpeechStatus("Thinking...");
+                        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            headers: {
+                                "Authorization": `Bearer ${key}`,
+                                "Content-Type": "application/json",
+                                "X-Title": "HyperMind",
+                                "HTTP-Referer": window.location.origin
+                            },
+                            body: JSON.stringify({
+                                model: "google/gemini-2.0-flash-lite-preview-02-05:free",
+                                messages: [
+                                    { role: "system", content: "You are a witty, concise AI tutor in a voice call. Keep responses brief and verbal-friendly." },
+                                    { role: "user", content: transcript }
+                                ]
+                            })
+                        });
+
+                        if (response.status === 401 || response.status === 402 || response.status === 429) {
+                            console.warn(`LiveSession key failed (${response.status}). Retrying...`);
+                            continue;
+                        }
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+
+                        const data = await response.json();
+                        const text = data.choices[0]?.message?.content;
+                        if (text && isMounted) {
+                            setSpeechStatus("Speaking...");
+                            const utterance = new SpeechSynthesisUtterance(text);
+                            const voices = window.speechSynthesis.getVoices();
+                            const preferredVoice = voices.find(v => v.name.includes('Google') || v.lang.startsWith('en-US'));
+                            if (preferredVoice) utterance.voice = preferredVoice;
+
+                            utterance.onend = () => {
+                                if (isMounted) setSpeechStatus("Listening...");
+                            };
+                            window.speechSynthesis.speak(utterance);
+                            success = true;
+                            break;
+                        }
+                    } catch (e) {
+                        console.error("OpenRouter Voice attempt failed", e);
                     }
+                }
 
-                    const data = await response.json();
-                    const text = data.choices[0]?.message?.content;
-                    if (text && isMounted) {
-                        setSpeechStatus("Speaking...");
-                        const utterance = new SpeechSynthesisUtterance(text);
-                        const voices = window.speechSynthesis.getVoices();
-                        const preferredVoice = voices.find(v => v.name.includes('Google') || v.lang.startsWith('en-US'));
-                        if (preferredVoice) utterance.voice = preferredVoice;
-
-                        utterance.onend = () => {
-                            if (isMounted) setSpeechStatus("Listening...");
-                        };
-                        window.speechSynthesis.speak(utterance);
-                    }
-                } catch (e) {
-                    console.error("OpenRouter Voice Failed", e);
-                    setSpeechStatus("Network Error.");
+                if (!success && isMounted) {
+                    setSpeechStatus("Voice processing failed.");
                 }
             };
 
@@ -162,7 +181,7 @@ export function LiveSession({ onClose }: LiveSessionProps) {
 
         const startSession = async () => {
             try {
-                if (!import.meta.env.VITE_GEMINI_API_KEY) throw new Error("API Key Missing");
+                if (!import.meta.env.VITE_GEMINI_API_KEY && getAllApiKeys().length === 0) throw new Error("API Key Missing");
 
                 // 1. Get User Media first to fail fast on permissions
                 let stream: MediaStream;
@@ -201,8 +220,7 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                 }
 
                 if (!apiKeyToUse) {
-                    console.log("No native key found, entering OpenRouter Voice Emulation mode.");
-                    return startOpenRouterSession(standardKey, mounted);
+                    return startOpenRouterSession(mounted);
                 }
 
                 const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
@@ -339,7 +357,6 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                             }
                         },
                         onclose: () => {
-                            console.log("Live session closed");
                             if (mounted) setIsConnected(false);
                             clearTimeout(connectionTimeout);
                         },
@@ -367,8 +384,8 @@ export function LiveSession({ onClose }: LiveSessionProps) {
                 sessionPromise.catch(e => {
                     clearTimeout(connectionTimeout);
                     const eStr = e.toString();
-                    const isQuota = eStr.includes('429') || e.status === 429 || eStr.includes('Quota');
-                    const isForbidden = eStr.includes('403') || e.status === 403 || eStr.includes('Forbidden');
+                    const isQuota = eStr.includes('429') || (e as any).status === 429 || eStr.includes('Quota');
+                    const isForbidden = eStr.includes('403') || (e as any).status === 403 || eStr.includes('Forbidden');
 
                     if (isQuota) {
                         setErrorMsg("Quota Exceeded (Rate Limit). Try Gemini Pro/Flash in AI Studio.");

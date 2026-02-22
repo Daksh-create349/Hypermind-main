@@ -243,7 +243,6 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
             try {
                 // DIRECT KEY USAGE: Use the standard Vite env var (Safe & Robust)
                 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-                // console.log("Initializing Chat with Key rotation...", apiKey.slice(0, 5) + "...");
 
                 const ai = new GoogleGenAI({ apiKey: apiKey });
                 const systemInstruction = `You are HyperMind, an advanced AI tutor.
@@ -266,7 +265,6 @@ export function ChatInterface({ userData, mode = 'learn', onLaunchCouncil }: Cha
                         parts: [{ text: m.content }]
                     }));
 
-                console.log("Initializing AI with Key:", apiKey ? apiKey.slice(0, 8) + "***" : "UNDEFINED");
 
                 const chat = ai.chats.create({
                     model: 'gemini-1.5-flash',

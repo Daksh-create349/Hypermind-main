@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CouncilEngine } from '../../lib/council/Engine';
 import { AgentConfig, CouncilMessage } from '../../lib/council/types';
 import { cn } from '../../lib/utils';
-import { BrainCircuit, Play, Pause, FileText, ChevronRight, Scale, Gavel, X, Minus } from 'lucide-react';
+import { BrainCircuit, Play, Pause, FileText, ChevronRight, Scale, Gavel, X, Minus, User } from 'lucide-react';
 import { marked } from 'marked';
 import mermaid from 'mermaid';
 
@@ -38,7 +38,6 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
 
         const init = async () => {
             // Show "Scanning Web" state if needed (could be a toast or subtle text)
-            console.log("Initializing Council & Researching...");
 
             initialAgents.forEach(a => engine.addAgent(a));
             setAgents(initialAgents);
@@ -255,6 +254,8 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
         }
     };
 
+    const [showStaff, setShowStaff] = useState(false);
+
     // Minimized View
     if (isMinimized) {
         return (
@@ -285,86 +286,85 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
     }
 
     return (
-        <div className="fixed inset-0 z-40 bg-black/95 backdrop-blur-sm relative font-sans overflow-hidden animate-in fade-in duration-300 flex flex-col items-center justify-center">
-            <div className="w-full h-full max-w-[1920px] bg-black relative flex overflow-hidden lg:border-x lg:border-white/10 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-500">
+            <div className="w-full max-w-6xl h-full max-h-[90vh] bg-[#0a0a0a] rounded-[2.5rem] border border-white/10 shadow-2xl relative flex flex-col overflow-hidden">
                 {/* Header / Nav */}
-                <div className="absolute top-0 w-full h-16 border-b border-white/10 bg-black/60 backdrop-blur-md z-20 flex items-center justify-between px-6">
+                <div className="h-20 border-b border-white/5 bg-black/40 backdrop-blur-xl flex items-center justify-between px-8 flex-shrink-0">
                     <div className="flex items-center gap-4">
-                        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"><X size={16} /></button>
-                        <button onClick={() => setIsMinimized(true)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-neutral-400 hover:text-white -ml-2"><Minus size={16} /></button>
-                        <div className="h-6 w-[1px] bg-white/20" />
+                        <button onClick={onClose} className="p-2.5 hover:bg-white/10 rounded-full transition-colors text-white border border-white/5">
+                            <X size={18} />
+                        </button>
+                        <button onClick={() => setIsMinimized(true)} className="p-2.5 hover:bg-white/10 rounded-full transition-colors text-neutral-500 hover:text-white border border-white/5">
+                            <Minus size={18} />
+                        </button>
+                        <div className="h-8 w-[1px] bg-white/10 mx-2" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest flex items-center gap-2">
-                                Cognitive Court // Session Active
-                                {messages.length === 0 && <span className="animate-pulse text-xs text-yellow-400">⚡ Scanning Live Web...</span>}
+                            <span className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                                Cognitive Court // Active
+                                {messages.length === 0 && <span className="animate-pulse text-xs text-yellow-500">⚡ Researching...</span>}
                             </span>
-                            <span className="text-sm font-medium text-white max-w-md truncate">{topic}</span>
+                            <span className="text-base font-bold text-white max-w-sm truncate">{topic}</span>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setShowStaff(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-neutral-900 border border-white/10 hover:border-white/20 text-neutral-400 hover:text-white rounded-full text-xs font-bold uppercase tracking-widest transition-all"
+                        >
+                            <User size={14} /> View Personnel
+                        </button>
+
                         {!showReport && (
                             <button
                                 onClick={() => setIsDebating(!isDebating)}
                                 className={cn(
                                     "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-all",
-                                    isDebating ? "bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30" : "bg-green-500/20 text-green-400 border border-green-500/50 hover:bg-green-500/30"
+                                    isDebating ? "bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20" : "bg-green-500/10 text-green-500 border border-green-500/30 hover:bg-green-500/20"
                                 )}
                             >
-                                {isDebating ? <Pause size={12} /> : <Play size={12} />}
-                                {isDebating ? "Pause Analysis" : "Resume"}
+                                {isDebating ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                                {isDebating ? "Pause" : "Resume"}
                             </button>
                         )}
                         <button
                             onClick={generateVerdict}
-                            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 hover:bg-indigo-500 transition-all shadow-lg"
+                            className="flex items-center gap-2 px-6 py-2 bg-white text-black rounded-full text-xs font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-white/5"
                         >
-                            <Gavel size={14} /> Issue Verdict
+                            <Gavel size={14} /> Verdict
                         </button>
                     </div>
                 </div>
 
-                {/* Left Col: Plaintiff (Fixed) */}
-                <div className="w-[18rem] pt-24 pb-6 px-6 border-r border-white/5 bg-gradient-to-b from-neutral-900/30 to-black flex flex-col items-center gap-4 z-10 hidden md:flex">
-                    <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <Scale size={12} /> Plaintiff (For)
-                    </div>
-                    {plaintiff && (
-                        <AgentCard agent={plaintiff} isSpeaking={currentSpeaker === plaintiff.id} align="left" />
-                    )}
-                </div>
-
-                {/* Center: Transcript Or Roadmap */}
-                <div className="flex-1 pt-20 pb-6 relative flex flex-col bg-neutral-950/50">
-                    <div className="flex-1 overflow-y-auto px-6 md:px-20 py-8 space-y-8 no-scrollbar scroll-smooth" ref={scrollRef}>
+                {/* Main View: One Focused Column */}
+                <div className="flex-1 overflow-hidden relative flex flex-col">
+                    <div className="flex-1 overflow-y-auto px-6 md:px-24 py-12 space-y-10 custom-scrollbar scroll-smooth" ref={scrollRef}>
                         {messages.filter(m => m.id !== 'init').map((msg) => {
                             const isJudge = agents.find(a => a.id === msg.agentId)?.role === 'moderator';
-                            const isUser = msg.agentId === 'user';
                             const agent = agents.find(a => a.id === msg.agentId);
-
-                            // Layout: Plaintiff Left, Defendant Right, Judge/User Center
                             const align = agent?.role === 'visionary' ? 'left' : agent?.role === 'skeptic' ? 'right' : 'center';
 
                             return (
                                 <div key={msg.id} className={cn(
-                                    "flex flex-col max-w-2xl transition-all duration-500 animate-in fade-in slide-in-from-bottom-4",
+                                    "flex flex-col max-w-3xl transition-all duration-700 animate-in fade-in slide-in-from-bottom-8",
                                     align === 'left' ? "items-start mr-auto" : align === 'right' ? "items-end ml-auto" : "items-center mx-auto text-center"
                                 )}>
                                     <div className={cn(
-                                        "text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-2",
-                                        align === 'left' ? "text-indigo-400" : align === 'right' ? "text-rose-400" : "text-neutral-500"
+                                        "text-[10px] font-black uppercase tracking-[0.15em] mb-3 flex items-center gap-2",
+                                        align === 'left' ? "text-indigo-400" : align === 'right' ? "text-rose-400" : "text-purple-400"
                                     )}>
+                                        <div className={cn("w-1.5 h-1.5 rounded-full", align === 'left' ? "bg-indigo-500" : align === 'right' ? "bg-rose-500" : "bg-purple-500")} />
                                         {agent?.name || 'User'}
-                                        {isJudge && <Gavel size={10} className="text-purple-500" />}
+                                        {isJudge && <Gavel size={10} />}
                                     </div>
                                     <div className={cn(
-                                        "p-6 rounded-2xl text-sm leading-relaxed shadow-lg backdrop-blur-sm border",
-                                        align === 'left' ? "bg-indigo-950/20 border-indigo-500/20 rounded-tl-sm text-indigo-100" :
-                                            align === 'right' ? "bg-rose-950/20 border-rose-500/20 rounded-tr-sm text-rose-100" :
-                                                "bg-neutral-900 border-white/10 text-neutral-300 w-full"
+                                        "p-8 rounded-[1.5rem] text-sm leading-relaxed shadow-2xl backdrop-blur-md border transition-all",
+                                        align === 'left' ? "bg-indigo-950/20 border-indigo-500/20 rounded-tl-none text-indigo-100/90" :
+                                            align === 'right' ? "bg-rose-950/20 border-rose-500/20 rounded-tr-none text-rose-100/90" :
+                                                "bg-neutral-900/50 border-white/5 text-neutral-300 w-full"
                                     )}>
                                         <div
-                                            className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed"
+                                            className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-headings:text-white prose-strong:text-white"
                                             dangerouslySetInnerHTML={{ __html: marked.parse(msg.content) as string }}
                                         />
                                     </div>
@@ -372,50 +372,89 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
                             );
                         })}
                         {currentSpeaker && (
-                            <div className="flex justify-center py-4">
-                                <div className="flex items-center gap-2 text-xs text-neutral-500 animate-pulse uppercase tracking-widest font-mono">
-                                    <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" />
-                                    Processing Testimony...
+                            <div className="flex justify-center py-8">
+                                <div className="flex items-center gap-3 px-6 py-3 bg-white/5 border border-white/5 rounded-full text-[10px] text-neutral-400 animate-pulse uppercase tracking-[0.2em] font-black">
+                                    <div className="flex gap-1">
+                                        <div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                        <div className="w-1 h-1 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                        <div className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    </div>
+                                    Capturing Testimony
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Right Col: Defendant (Fixed) */}
-                <div className="w-[18rem] pt-24 pb-6 px-6 border-l border-white/5 bg-gradient-to-b from-neutral-900/30 to-black flex flex-col items-center gap-4 z-10 hidden md:flex">
-                    <div className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <Scale size={12} /> Defendant (Against)
+                {/* Court Staff Pop-up */}
+                {showStaff && (
+                    <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in duration-300">
+                        <div className="w-full max-w-4xl bg-[#0d0d0d] border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                            <div className="p-8 border-b border-white/5 flex justify-between items-center bg-black/40">
+                                <div className="flex flex-col">
+                                    <h3 className="text-xl font-black text-white uppercase tracking-wider flex items-center gap-3">
+                                        <User className="text-indigo-500" />
+                                        Court Personnel
+                                    </h3>
+                                    <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">The Strategic Intelligence Engines Accessing Your Case</p>
+                                </div>
+                                <button onClick={() => setShowStaff(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-neutral-400 hover:text-white">
+                                    <X size={24} />
+                                </button>
+                            </div>
+                            <div className="p-10 grid grid-cols-1 md:grid-cols-3 gap-8 overflow-y-auto">
+                                <div className="space-y-4">
+                                    <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-4">Plaintiff Side</div>
+                                    {plaintiff && <AgentCard agent={plaintiff} isSpeaking={currentSpeaker === plaintiff.id} align="left" />}
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="text-[10px] font-black text-purple-500 uppercase tracking-widest ml-4">Presiding Over</div>
+                                    {judge && <AgentCard agent={judge} isSpeaking={currentSpeaker === judge.id} align="left" />}
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest ml-4">Defense Side</div>
+                                    {defendant && <AgentCard agent={defendant} isSpeaking={currentSpeaker === defendant.id} align="right" />}
+                                </div>
+                            </div>
+                            <div className="p-8 bg-black/40 border-t border-white/5 flex justify-center">
+                                <button
+                                    onClick={() => setShowStaff(false)}
+                                    className="px-10 py-3 bg-white text-black rounded-full text-xs font-black uppercase tracking-widest transition-transform hover:scale-105"
+                                >
+                                    Return to Trial
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    {defendant && (
-                        <AgentCard agent={defendant} isSpeaking={currentSpeaker === defendant.id} align="right" />
-                    )}
-                </div>
+                )}
 
                 {/* Verdict Modal (Roadmap) */}
                 {showReport && (
-                    <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-xl flex items-center justify-center p-8 animate-in fade-in duration-500">
-                        <div className="max-w-5xl w-full bg-neutral-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[90vh]">
-                            <div className="p-6 border-b border-white/10 flex justify-between items-center bg-neutral-950">
-                                <h2 className="text-xl font-bold text-white flex items-center gap-3 uppercase tracking-wider">
-                                    <Gavel size={24} className="text-indigo-500" />
-                                    Strategic Roadmap
-                                </h2>
+                    <div className="absolute inset-0 z-[70] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-8 animate-in fade-in duration-500">
+                        <div className="max-w-5xl w-full bg-[#0d0d0d] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col h-[85vh] animate-in slide-in-from-bottom-12">
+                            <div className="p-8 border-b border-white/5 flex justify-between items-center bg-black/60">
+                                <div className="flex flex-col">
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3 uppercase tracking-[0.1em]">
+                                        <Gavel size={28} className="text-indigo-500" />
+                                        Final Verdict
+                                    </h2>
+                                    <p className="text-xs text-neutral-500 mt-1 uppercase tracking-widest font-bold">Comprehensive Strategic Roadmap & Synthesis</p>
+                                </div>
                                 <div className="flex items-center gap-4">
-                                    <button onClick={downloadPDF} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-sm text-xs font-bold uppercase tracking-widest">
-                                        <FileText size={14} /> Download Strategy
+                                    <button onClick={downloadPDF} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20">
+                                        <FileText size={16} /> Archive Brief
                                     </button>
-                                    <button onClick={() => setShowReport(false)} className="text-neutral-500 hover:text-white"><X size={20} /></button>
+                                    <button onClick={() => setShowReport(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-neutral-500 hover:text-white border border-white/5"><X size={20} /></button>
                                 </div>
                             </div>
-                            <div id="report-export-container" className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-neutral-900">
+                            <div id="report-export-container" className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-[#0d0d0d]">
                                 {/* Mermaid Chart Container */}
-                                <div className="mb-12 p-8 bg-neutral-950/50 border border-white/5 rounded-xl flex justify-center">
+                                <div className="mb-12 p-10 bg-black/40 border border-white/5 rounded-[2rem] flex justify-center shadow-inner">
                                     <div id="mermaid-chart" className="w-full max-w-3xl flex justify-center text-white"></div>
                                 </div>
 
                                 {/* Text Content */}
-                                <div className="prose prose-invert prose-stone max-w-none prose-headings:text-white prose-a:text-indigo-400">
+                                <div className="prose prose-invert prose-stone max-w-none prose-headings:text-white prose-a:text-indigo-400 prose-p:text-neutral-400 prose-p:leading-relaxed prose-lg">
                                     <div dangerouslySetInnerHTML={{ __html: marked.parse(reportContent.replace(/```mermaid[\s\S]*?```/, '')) as string }} />
                                 </div>
                             </div>
@@ -427,7 +466,7 @@ export function CouncilInterface({ topic, context, initialAgents, onClose, userP
     );
 }
 
-function AgentCard({ agent, isSpeaking, align }: { agent: AgentConfig, isSpeaking: Boolean, align: 'left' | 'right' }) {
+function AgentCard({ agent, isSpeaking, align }: { agent: AgentConfig, isSpeaking: any, align: 'left' | 'right' }) {
     return (
         <div className={cn(
             "w-full p-6 rounded-2xl border transition-all duration-500 flex flex-col items-center gap-4 text-center group relative overflow-hidden",

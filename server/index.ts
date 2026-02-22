@@ -11,18 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({
-    origin: '*', // Allows all origins - change this to your vercel URL for better security later
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(cors());
 app.use(express.json());
-
-// Request logger for debugging production issues
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    next();
-});
 
 // Import Models (ensure these files exist and are compiled/runnable via tsx)
 // We need to use relative paths. Since we are in server/index.ts, models are in ../lib/models
