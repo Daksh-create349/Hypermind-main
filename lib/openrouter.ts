@@ -1,28 +1,28 @@
 function getRandomApiKey() {
-    const keys: string[] = [];
+    // Collect all potential keys from environment
+    const rawKeys = [
+        import.meta.env.VITE_OPENROUTER_API_KEY_1,
+        import.meta.env.VITE_OPENROUTER_API_KEY_2,
+        import.meta.env.VITE_OPENROUTER_API_KEY_3,
+        import.meta.env.VITE_OPENROUTER_API_KEY,
+        import.meta.env.VITE_GEMINI_API_KEY
+    ];
 
-    // Aggregate keys from environment variables
-    const k1 = import.meta.env.VITE_OPENROUTER_API_KEY_1;
-    const k2 = import.meta.env.VITE_OPENROUTER_API_KEY_2;
-    const k3 = import.meta.env.VITE_OPENROUTER_API_KEY_3;
-    const fallback = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+    // Filter out undefined, null, or empty strings
+    const validKeys = rawKeys.filter(k => k && typeof k === 'string' && k.trim().length > 0);
 
-    if (k1) keys.push(k1);
-    if (k2) keys.push(k2);
-    if (k3) keys.push(k3);
-
-    // If no numbered keys are found, use the fallback generic environment variable
-    if (keys.length === 0 && fallback) {
-        keys.push(fallback);
-    }
-
-    // If absolutely no keys exist, fail gracefully or return empty string
-    if (keys.length === 0) {
-        console.error("No OpenRouter API keys found in environment variables.");
+    if (validKeys.length === 0) {
+        console.warn("CRITICAL: No OpenRouter keys detected in client environment!");
         return "";
     }
 
-    return keys[Math.floor(Math.random() * keys.length)];
+    // Pick a random valid key
+    const selectedKey = validKeys[Math.floor(Math.random() * validKeys.length)];
+
+    // Log the first 4 characters to console (Helpful for debugging 401s)
+    console.log(`[OpenRouter] Using key starting with: ${selectedKey.substring(0, 4)}...`);
+
+    return selectedKey;
 }
 
 export class Chat {
