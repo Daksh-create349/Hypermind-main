@@ -60,13 +60,18 @@ export class Chat {
 
         const apiKey = getRandomApiKey();
 
+        if (!apiKey) {
+            console.error("[OpenRouter] Cannot send message: No API key available.");
+            throw new Error("API Key Missing: Please add VITE_GEMINI_API_KEY to Vercel.");
+        }
+
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${apiKey}`,
+                "Authorization": `Bearer ${apiKey.trim()}`,
                 "Content-Type": "application/json",
-                "HTTP-Referer": window.location.origin, // Matches Vercel automatically
-                "X-Title": "HyperMind" // Required by OpenRouter
+                "HTTP-Referer": window.location.origin,
+                "X-Title": "HyperMind"
             },
             body: JSON.stringify({
                 model: this.model,
@@ -76,6 +81,10 @@ export class Chat {
 
         if (!response.ok) {
             const errText = await response.text();
+            if (response.status === 401) {
+                console.error("[OpenRouter] 401 Error. Key being used:", apiKey.substring(0, 7) + "...");
+                throw new Error("OpenRouter 401: Invalid API Key. Check your Vercel Environment Variables.");
+            }
             throw new Error(`OpenRouter Error: ${response.status} ${errText}`);
         }
 
@@ -118,6 +127,9 @@ class OpenRouterModels {
         }
 
         const apiKey = getRandomApiKey();
+        if (!apiKey) {
+            throw new Error("API Key Missing: Please add VITE_GEMINI_API_KEY to Vercel.");
+        }
 
         // Force gemini 2.0 model
         const actualModel = "google/gemini-2.0-flash-001";
@@ -125,7 +137,7 @@ class OpenRouterModels {
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${apiKey}`,
+                "Authorization": `Bearer ${apiKey.trim()}`,
                 "Content-Type": "application/json",
                 "HTTP-Referer": window.location.origin,
                 "X-Title": "HyperMind"
@@ -138,6 +150,10 @@ class OpenRouterModels {
 
         if (!response.ok) {
             const errText = await response.text();
+            if (response.status === 401) {
+                console.error("[OpenRouter] generateContent 401 Error. Key starting with:", apiKey.substring(0, 7) + "...");
+                throw new Error("OpenRouter 401: Invalid API Key. Check your Vercel Environment Variables.");
+            }
             throw new Error(`OpenRouter Error: ${response.status} ${errText}`);
         }
 
