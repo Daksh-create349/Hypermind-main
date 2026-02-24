@@ -20,6 +20,18 @@ root.render(
   <ClerkProvider
     publishableKey={PUBLISHABLE_KEY}
     afterSignOutUrl="/"
+    localization={{
+      signIn: {
+        start: {
+          title: "Sign in to Hypermind",
+        },
+      },
+      signUp: {
+        start: {
+          title: "Join Hypermind",
+        },
+      },
+    }}
     appearance={{
       baseTheme: dark,
       variables: {
